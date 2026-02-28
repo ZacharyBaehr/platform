@@ -1,0 +1,2775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PLATFORM — Transit Simulator</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #ffffff;
+    --panel-inner: #f4f6f8;
+    --border: #d0d7de;
+    --accent: #1a56db;
+    --accent2: #00a884;
+    --danger: #cc2222;
+    --text: #1a1f2e;
+    --text-muted: #57606a;
+    --green: #1a7f37;
+    --panel-w: 384px;
+    --radius: 10px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Barlow Condensed', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* HEADER */
+  #header {
+    background: #0d1117;
+    border-bottom: 2px solid var(--accent);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    z-index: 1000;
+    flex-shrink: 0;
+  }
+
+  #header h1 {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #e6edf3;
+  }
+
+  #header h1 span { color: #7d8590; font-weight: 400; }
+
+  .stat-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 2px 12px;
+    border-left: 1px solid #30363d;
+  }
+
+  .stat-chip .label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: #7d8590;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .stat-chip .value {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 16px;
+    color: #e6edf3;
+    font-weight: bold;
+  }
+
+  .stat-chip .value.green { color: #3fb950; }
+  .stat-chip .value.red { color: #ff4444; }
+
+  #game-time {
+    margin-left: auto;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: var(--accent2);
+    letter-spacing: 2px;
+  }
+
+  #speed-controls {
+    display: flex;
+    gap: 4px;
+  }
+
+  .speed-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 4px 10px;
+    cursor: pointer;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+
+  .speed-btn.active, .speed-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* MAIN LAYOUT */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* MAP */
+  #map {
+    flex: 1;
+    position: relative;
+    cursor: crosshair;
+  }
+
+  /* RIGHT PANEL */
+  #panel {
+    width: var(--panel-w);
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-tabs {
+    display: flex;
+    border-bottom: 2px solid var(--border);
+    flex-shrink: 0;
+    background: var(--panel);
+  }
+
+  .tab-btn {
+    flex: 1;
+    padding: 10px 4px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .tab-btn:hover:not(.active) { color: var(--text); }
+
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--panel-inner);
+  }
+
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: var(--panel-inner); }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: flex; flex-direction: column; gap: 12px; }
+
+  /* CARDS */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* BUTTONS */
+  .btn {
+    padding: 8px 14px;
+    border: 1.5px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.15s;
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--radius);
+  }
+
+  .btn:hover { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+  .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.accent2 { border-color: var(--accent2); color: var(--accent2); }
+  .btn.accent2:hover, .btn.accent2.active { background: var(--accent2); color: white; }
+  .btn.danger { border-color: var(--danger); color: var(--danger); }
+  .btn.danger:hover { background: var(--danger); color: white; }
+
+  /* LINE LIST */
+  .line-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    background: var(--panel);
+  }
+
+  .line-item:hover { border-color: var(--text-muted); }
+  .line-item.selected { border-color: var(--accent); background: #eef2ff; }
+
+  .line-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .line-info { flex: 1; }
+  .line-info .name { font-size: 14px; font-weight: 700; }
+  .line-info .stats { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text-muted); }
+
+  /* SLIDER */
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .slider-row label {
+    font-size: 11px;
+    color: var(--text-muted);
+    width: 80px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  input[type=range] {
+    flex: 1;
+    accent-color: var(--accent);
+  }
+
+  .slider-val {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    width: 40px;
+    text-align: right;
+  }
+
+  /* HEATMAP TOGGLE */
+  #heatmap-toggle {
+    position: absolute;
+    bottom: 24px;
+    left: 12px;
+    z-index: 999;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 8px 14px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+
+  #heatmap-toggle:hover, #heatmap-toggle.active {
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+
+  /* MODE INDICATOR */
+  #mode-bar {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 999;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    padding: 6px 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    pointer-events: none;
+    display: none;
+  }
+
+  /* AI ADVISOR */
+  #advisor-box {
+    background: var(--panel-inner);
+    border: 1.5px solid var(--accent2);
+    border-radius: var(--radius);
+    padding: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+    min-height: 80px;
+    position: relative;
+  }
+
+  #advisor-box .advisor-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent2);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  #advisor-loading {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .typing-dot {
+    display: inline-block;
+    animation: blink 1s infinite;
+  }
+
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes blink {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+
+  /* DEMAND BARS */
+  .demand-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+    font-size: 12px;
+  }
+
+  .demand-bar-row .zone-name {
+    width: 90px;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .demand-bar-bg {
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    overflow: hidden;
+  }
+
+  .demand-bar-fill {
+    height: 100%;
+    background: var(--accent2);
+    transition: width 0.5s;
+  }
+
+  .demand-bar-val {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--accent2);
+    width: 35px;
+    text-align: right;
+  }
+
+  /* MESSAGE LOG BAR */
+  #msg-bar {
+    height: 150px;
+    background: #0d1117;
+    border-top: 2px solid var(--accent);
+    display: flex;
+    align-items: stretch;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  #msg-bar-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--accent);
+    text-transform: uppercase;
+    writing-mode: vertical-lr;
+    transform: rotate(180deg);
+    padding: 8px 6px;
+    border-right: 1px solid #30363d;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  #msg-dispatch {
+    flex: 3;  /* 75% of remaining width */
+    overflow-y: auto;
+    padding: 6px 12px;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 2px;
+    border-right: 1px solid #30363d;
+  }
+
+  #msg-dispatch::-webkit-scrollbar { width: 3px; }
+  #msg-dispatch::-webkit-scrollbar-track { background: #0d1117; }
+  #msg-dispatch::-webkit-scrollbar-thumb { background: #30363d; }
+
+  /* Happiness meters panel — 25% width, split vertically */
+  #msg-meters {
+    flex: 1;  /* 25% of remaining width */
+    display: flex;
+    flex-direction: column;
+    padding: 8px 10px;
+    gap: 6px;
+    background: #0a0e14;
+  }
+
+  .meter-block {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+  }
+
+  .meter-block:first-child {
+    border-bottom: 1px solid #30363d;
+    padding-bottom: 6px;
+  }
+
+  .meter-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: #7d8590;
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .meter-label span.meter-val {
+    font-size: 13px;
+    font-weight: 700;
+    font-family: 'Share Tech Mono', monospace;
+    color: #3fb950;
+  }
+
+  .meter-bar-bg {
+    height: 8px;
+    background: #1a2030;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .meter-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s, background 0.6s;
+  }
+
+  .meter-desc {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 10px;
+    color: #57606a;
+    line-height: 1.3;
+  }
+
+  .msg-entry {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #e6edf3;
+    padding: 2px 0;
+    border-bottom: 1px solid #1a2030;
+    animation: msgSlide 0.3s ease-out;
+  }
+
+  .msg-entry.msg-welcome { color: #7d8590; font-weight: 400; }
+  .msg-entry.msg-warn    { color: #f0a500; }
+  .msg-entry.msg-danger  { color: #ff4444; }
+  .msg-entry.msg-good    { color: #3fb950; }
+  .msg-entry.msg-info    { color: #00d4aa; }
+  .msg-entry.msg-game    { color: #e91e63; font-size: 16px; }
+
+  @keyframes msgSlide {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* LEAFLET OVERRIDES */
+  .leaflet-container { background: #1a2030 !important; }
+  .stop-marker {
+    background: white;
+    border: 3px solid #333;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  .stop-marker:hover { transform: scale(1.3); }
+
+  /* GROWTH MILESTONE */
+  .milestone {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .milestone.done {
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  .milestone.done .m-icon::before { content: '✓'; }
+  .milestone .m-icon::before { content: '○'; color: var(--text-muted); }
+  .milestone.done .m-icon::before { color: var(--green); }
+
+  /* REFUND TIMER */
+  .refund-label {
+    position: absolute;
+    top: -22px; left: 50%; transform: translateX(-50%);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--green);
+    white-space: nowrap;
+    background: rgba(255,255,255,0.92);
+    padding: 1px 3px;
+    pointer-events: none;
+    border: 1px solid var(--green);
+    border-radius: 3px;
+  }
+
+  /* REFUND TIMER RING */
+  .refund-ring {
+    position: absolute;
+    top: -8px; left: -8px;
+    width: 30px; height: 30px;
+    pointer-events: none;
+  }
+
+  .refund-ring circle {
+    fill: none;
+    stroke: var(--green);
+    stroke-width: 2.5;
+    stroke-dasharray: 75.4;
+    stroke-dashoffset: 0;
+    stroke-linecap: round;
+    transform-origin: center;
+    transform: rotate(-90deg);
+    transition: stroke-dashoffset 1s linear, stroke 0.3s;
+  }
+
+  /* FARE SLIDER */
+  .fare-preview {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .fare-stat {
+    background: var(--panel-inner);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+
+  .fare-stat .fs-label {
+    font-size: 9px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .fare-stat .fs-val {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    color: var(--accent);
+    margin-top: 2px;
+  }
+
+  /* WARNING MARKERS */
+  .warning-marker {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+  }
+
+  .warning-pulse {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(255, 68, 68, 0.15);
+    border: 2px solid rgba(255, 68, 68, 0.5);
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation: warnpulse 1.8s ease-out infinite;
+  }
+
+  @keyframes warnpulse {
+    0%   { transform: translate(-50%, -50%) scale(0.6); opacity: 0.9; }
+    70%  { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+    100% { opacity: 0; }
+  }
+
+  .warning-icon {
+    font-size: 22px;
+    line-height: 1;
+    filter: drop-shadow(0 0 6px #ff4444);
+    animation: warnbob 1.8s ease-in-out infinite;
+  }
+
+  @keyframes warnbob {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(-4px); }
+  }
+
+  .warning-label {
+    margin-top: 2px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: #ff4444;
+    background: rgba(13,17,23,0.88);
+    padding: 1px 4px;
+    border: 1px solid rgba(255,68,68,0.5);
+    border-radius: 3px;
+    white-space: nowrap;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* QUOTA BAR */
+  .quota-bar-bg {
+    height: 6px;
+    background: var(--border);
+    margin-top: 6px;
+    overflow: hidden;
+  }
+
+  .quota-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.4s;
+  }
+
+  /* SCROLLBAR */
+  * { scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <h1>PLATFORM <span>// Transit Simulator</span></h1>
+  <div class="stat-chip">
+    <span class="label">Budget</span>
+    <span class="value" id="stat-budget">$50,000</span>
+  </div>
+  <div class="stat-chip">
+    <span class="label">Daily Riders</span>
+    <span class="value green" id="stat-riders">0</span>
+  </div>
+  <div class="stat-chip">
+    <span class="label">Revenue/Day</span>
+    <span class="value green" id="stat-revenue">$0</span>
+  </div>
+  <div class="stat-chip">
+    <span class="label">Op. Cost/Day</span>
+    <span class="value red" id="stat-cost">$0</span>
+  </div>
+  <div class="stat-chip">
+    <span class="label">Net/Day</span>
+    <span class="value" id="stat-net">$0</span>
+  </div>
+  <div class="stat-chip">
+    <span class="label">Freq Upgrades</span>
+    <span class="value" id="stat-freq-upgrades" style="color:#00d4aa">0</span>
+  </div>
+  <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px">
+    <div id="game-time" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:#e6edf3;letter-spacing:1px">January 1, 2026</div>
+    <div id="season-badge" style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:#f0a500;letter-spacing:1px">☀️ Break</div>
+  </div>
+  <div id="speed-controls">
+    <button class="speed-btn active" data-speed="0">⏸</button>
+    <button class="speed-btn" data-speed="1">1×</button>
+    <button class="speed-btn" data-speed="3">3×</button>
+    <button class="speed-btn" data-speed="10">10×</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="map">
+    <div id="mode-bar">MODE: PLACING STOP — CLICK MAP TO PLACE</div>
+    <button id="heatmap-toggle">◉ Demand Heatmap</button>
+  </div>
+
+  <div id="panel">
+    <div class="panel-tabs">
+      <button class="tab-btn active" data-tab="build">Build</button>
+      <button class="tab-btn" data-tab="lines">Lines</button>
+      <button class="tab-btn" data-tab="demand">Demand</button>
+      <button class="tab-btn" data-tab="advisor">Advisor</button>
+    </div>
+    <div class="panel-body">
+
+      <!-- BUILD TAB -->
+      <div class="tab-content active" id="tab-build">
+        <div class="card">
+          <div class="card-title">Actions</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:20px;color:var(--text-muted);margin-bottom:8px;line-height:1.4">
+            STOP QUOTA: <span id="quota-used" style="color:var(--accent)">0</span> / <span id="quota-max" style="color:var(--accent)">3</span>
+            <div style="font-size:11px"><span id="quota-next" style="color:var(--text-muted)"> · next in — days</span></div>
+            <div class="quota-bar-bg"><div class="quota-bar-fill" id="quota-bar" style="width:0%"></div></div>
+          </div>
+          <button class="btn" id="btn-place-stop">⬤ Place Stop — $8,000</button>
+          <br>
+          <button class="btn accent2" id="btn-new-line">+ New Line — $20,000</button>
+          <br>
+          <button class="btn" id="btn-connect-mode">⟶ Connect Stops — $5k+ per segment</button>
+          <br>
+          <button class="btn" id="btn-waypoint-mode">〰 Add Route Curve — click segment then map</button>
+          <br>
+          <button class="btn accent2" id="btn-add-to-line-mode">＋ Add Stop to Existing Line</button>
+          <br>
+          <button class="btn danger" id="btn-delete-mode">✕ Demolish Stop — $10,000</button>
+          <br>
+          <button class="btn" id="btn-loan" style="border-color:#9b59b6;color:#9b59b6">🏦 Emergency Loan — $100,000 (once only)</button>
+        </div>
+        <div class="card">
+          <div class="card-title">Fare Pricing</div>
+          <div class="slider-row">
+            <label>Fare</label>
+            <input type="range" min="50" max="1000" step="25" value="250" id="fare-slider">
+            <span class="slider-val" id="fare-display">$2.50</span>
+          </div>
+          <div class="fare-preview">
+            <div class="fare-stat"><div class="fs-label">Ridership ×</div><div class="fs-val" id="fare-rider-mult">1.00×</div></div>
+            <div class="fare-stat"><div class="fs-label">Rev/Rider</div><div class="fs-val" id="fare-rev-rider">$2.50</div></div>
+            <div class="fare-stat"><div class="fs-label">Est. Revenue</div><div class="fs-val" id="fare-est-rev">$0/day</div></div>
+            <div class="fare-stat"><div class="fs-label">Sweet Spot</div><div class="fs-val" id="fare-sweet">$2.50</div></div>
+          </div>
+          <div style="margin-top:8px;font-size:10px;color:var(--text-muted);font-family:'Share Tech Mono',monospace" id="fare-hint">Balanced pricing. Ridership unaffected.</div>
+        </div>
+
+          <div id="network-stats" style="font-family:'Share Tech Mono',monospace;font-size:12px;line-height:2;color:var(--text-muted)">
+            Stops: <span style="color:var(--text)" id="ns-stops">0</span><br>
+            Lines: <span style="color:var(--text)" id="ns-lines">0</span><br>
+            Connections: <span style="color:var(--text)" id="ns-conns">0</span><br>
+            Transfers: <span style="color:var(--text)" id="ns-transfers">0</span><br>
+            Efficiency: <span style="color:var(--accent)" id="ns-eff">—</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">City Growth</div>
+          <div id="milestones">
+            <div class="milestone" data-threshold="500"><span class="m-icon"></span> 500 daily riders</div>
+            <div class="milestone" data-threshold="2000"><span class="m-icon"></span> 2,000 daily riders</div>
+            <div class="milestone" data-threshold="5000"><span class="m-icon"></span> 5,000 daily riders</div>
+            <div class="milestone" data-threshold="10000"><span class="m-icon"></span> 10,000 daily riders</div>
+            <div class="milestone" data-threshold="25000"><span class="m-icon"></span> 25,000 daily riders</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LINES TAB -->
+      <div class="tab-content" id="tab-lines">
+        <div class="card">
+          <div class="card-title">Active Lines</div>
+          <div id="lines-list"><p style="color:var(--text-muted);font-size:13px">No lines yet. Create a line in the Build tab.</p></div>
+        </div>
+        <div class="card" id="line-detail-card" style="display:none">
+          <div class="card-title">Line Settings</div>
+          <div id="line-detail-content"></div>
+        </div>
+      </div>
+
+      <!-- DEMAND TAB -->
+      <div class="tab-content" id="tab-demand">
+        <div class="card">
+          <div class="card-title">Zone Demand</div>
+          <div id="demand-bars"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Seasonal Demand</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);line-height:1.9">
+            🎓 <span style="color:var(--text)">Spring Sem:</span> Jan 10 – May 10<br>
+            ☀️ <span style="color:var(--text)">Summer Break:</span> May 11 – Aug 19<br>
+            🎓 <span style="color:var(--text)">Fall Sem:</span> Aug 20 – Dec 15<br>
+            ❄️ <span style="color:var(--text)">Winter Break:</span> Dec 16 – Jan 9<br>
+            🏈 <span style="color:var(--text)">Husker Home Games:</span> Every other Sat, Sept–Nov<br>
+            <span style="color:var(--text-muted);font-size:10px">University zones: +45% in semester, –45% on break<br>UNL football: +400 weight (≈100k visitors)</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Peak Hours</div>
+          <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);line-height:2">
+            AM Peak: <span style="color:var(--accent)">7–9 AM (+80%)</span><br>
+            Midday: <span style="color:var(--text)">10 AM–3 PM</span><br>
+            PM Peak: <span style="color:var(--accent)">4–7 PM (+100%)</span><br>
+            Evening: <span style="color:var(--text-muted)">–40%</span><br>
+            Night: <span style="color:var(--text-muted)">–80%</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Stop Performance</div>
+          <div id="stop-performance" style="font-size:12px;color:var(--text-muted)">Place stops to see performance data.</div>
+        </div>
+      </div>
+
+      <!-- ADVISOR TAB -->
+      <div class="tab-content" id="tab-advisor">
+        <div id="advisor-box">
+          <div class="advisor-label">◈ AI Transit Advisor</div>
+          <div id="advisor-text">Click "Analyze Network" to get AI-powered ridership insights and optimization suggestions.</div>
+        </div>
+        <button class="btn accent2" id="btn-analyze">◈ Analyze Network</button>
+        <div class="card">
+          <div class="card-title">Ask a Question</div>
+          <textarea id="advisor-question" style="width:100%;background:var(--panel-inner);border:1.5px solid var(--border);border-radius:6px;color:var(--text);padding:8px;font-family:'Barlow Condensed',sans-serif;font-size:13px;resize:vertical;min-height:60px;outline:none" placeholder="e.g. Should I extend Line A to the university?"></textarea>
+          <br><br>
+          <button class="btn" id="btn-ask-advisor">→ Ask Advisor</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MESSAGE LOG BAR -->
+<div id="msg-bar">
+  <div id="msg-bar-label">📡 DISPATCH</div>
+  <div id="msg-dispatch">
+    <div class="msg-entry msg-welcome">Welcome to PLATFORM — Place stops and connect lines to begin.</div>
+  </div>
+  <div id="msg-meters">
+    <!-- Community Happiness -->
+    <div class="meter-block">
+      <div class="meter-label">
+        <span>Community <span id="comm-face-bar">😊</span></span>
+        <span class="meter-val" id="comm-val-bar">75%</span>
+      </div>
+      <div class="meter-bar-bg">
+        <div class="meter-bar-fill" id="comm-bar-fill" style="width:75%;background:#3fb950"></div>
+      </div>
+      <div class="meter-desc" id="comm-desc-bar">Serve hot zones to keep riders happy</div>
+    </div>
+    <!-- Taxpayer Happiness -->
+    <div class="meter-block">
+      <div class="meter-label">
+        <span>Taxpayers <span id="tax-face-bar">😊</span></span>
+        <span class="meter-val" id="tax-val-bar">80%</span>
+      </div>
+      <div class="meter-bar-bg">
+        <div class="meter-bar-fill" id="tax-bar-fill" style="width:80%;background:#3fb950"></div>
+      </div>
+      <div class="meter-desc" id="tax-desc-bar">Invest your budget — don't hoard it</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// GAME STATE
+// ============================================================
+const STOP_COST = 8000;
+const LINE_COST = 20000;
+const DELETE_COST = 10000;
+const FREQ_UPGRADE_COST = 20000;   // cost to +1 frequency every 30 days
+const CONNECT_COST_PER_HALF_MILE = 5000; // $5,000 per 0.5 miles, min $5,000
+const TICKET_FRACTION = 0.7;
+const BASE_FARE = 2.50;
+const INITIAL_STOP_QUOTA = 3;
+const STOP_UNLOCK_DAYS = 60;   // +1 stop every 60 days
+const FREQ_UNLOCK_DAYS = 60;       // one free upgrade opportunity every 60 days
+const MAX_FREQUENCY = 1;           // locked at 1/hr to start; upgrades increase this per-line cap
+
+// Fare elasticity: price sensitivity. Returns ridership multiplier for a given fare.
+function calcFareMultiplier(fare) {
+  // Elasticity curve: at $1 → 1.4×, at $2.50 → 1.0×, at $5 → 0.65×, at $10 → 0.3×
+  // Using power curve: mult = (BASE_FARE / fare)^0.7
+  return Math.pow(BASE_FARE / fare, 0.7);
+}
+
+const LINE_COLORS = ['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#e91e63'];
+
+// Lincoln, NE neighborhood demand zones
+// baseWeight = normal ridership weight; universityZone = true if affected by academic calendar
+const DEMAND_ZONES = [
+  { name: 'Downtown',        lat: 40.8136, lng: -96.7026, weight: 90,  radius: 0.012, universityZone: false },
+  { name: 'UNL Campus',      lat: 40.8202, lng: -96.7005, weight: 95,  radius: 0.010, universityZone: true,  footballZone: true },
+  { name: 'UNL East Campus', lat: 40.8260, lng: -96.6610, weight: 55,  radius: 0.009, universityZone: true  },
+  { name: 'Haymarket',       lat: 40.8172, lng: -96.7083, weight: 70,  radius: 0.008, universityZone: false },
+  { name: 'Near South',      lat: 40.7990, lng: -96.7020, weight: 65,  radius: 0.012, universityZone: false },
+  { name: 'South Lincoln',   lat: 40.7760, lng: -96.6900, weight: 55,  radius: 0.018, universityZone: false },
+  { name: 'Antelope Valley', lat: 40.8070, lng: -96.6880, weight: 60,  radius: 0.010, universityZone: false },
+  { name: 'East Lincoln',    lat: 40.8100, lng: -96.6540, weight: 50,  radius: 0.020, universityZone: false },
+  { name: 'Northeast',       lat: 40.8400, lng: -96.6700, weight: 45,  radius: 0.018, universityZone: false },
+  { name: 'North Lincoln',   lat: 40.8450, lng: -96.7100, weight: 40,  radius: 0.016, universityZone: false },
+  { name: 'Piedmont',        lat: 40.8250, lng: -96.7300, weight: 45,  radius: 0.012, universityZone: false },
+  { name: 'West A Street',   lat: 40.8030, lng: -96.7400, weight: 50,  radius: 0.015, universityZone: false },
+  { name: 'SouthWest',       lat: 40.7750, lng: -96.7200, weight: 45,  radius: 0.016, universityZone: false },
+  { name: 'Highlands',       lat: 40.7950, lng: -96.7600, weight: 35,  radius: 0.014, universityZone: false },
+  { name: 'Air Park',        lat: 40.8600, lng: -96.7500, weight: 30,  radius: 0.014, universityZone: false },
+  { name: 'Havelock',        lat: 40.8250, lng: -96.6350, weight: 48,  radius: 0.012, universityZone: false },
+  { name: 'Eastside',        lat: 40.8000, lng: -96.6500, weight: 42,  radius: 0.014, universityZone: false },
+  // Colleges
+  { name: 'NWU',             lat: 40.8388, lng: -96.6509, weight: 58,  radius: 0.009, universityZone: true  },
+  { name: 'SCC',             lat: 40.8159, lng: -96.6015, weight: 65,  radius: 0.011, universityZone: true  },
+  { name: 'Union College',   lat: 40.7734, lng: -96.6524, weight: 52,  radius: 0.008, universityZone: true  },
+];
+
+let state = {
+  budget: 100000,
+  currentDate: new Date(2026, 0, 1), // Jan 1, 2026
+  stops: [],
+  lines: [],
+  mode: 'none',
+  selectedLine: null,
+  connectingFrom: null,
+  dailyRiders: 0,
+  totalRiders: 0,
+  heatmapVisible: false,
+  heatmapLayers: [],
+  gameSpeed: 0,
+  tickInterval: null,
+  cityGrowthMultiplier: 1.0,
+  lineColorIdx: 0,
+  stopIdCounter: 0,
+  lineIdCounter: 0,
+  fare: 2.50,
+  fareMultiplier: 1.0,
+  stopsPlaced: 0,
+  stopQuota: INITIAL_STOP_QUOTA,
+  warningMarkers: [],
+  freqUpgradesAvailable: 0,
+  trainAnimations: [],
+  totalDaysElapsed: 0,       // increments each tick for quota/upgrade tracking
+  footballGameDates: [],     // set of YYYY-MM-DD strings for home game Saturdays
+  communityHappiness: 75,
+  daysSinceLastImprovement: 0,
+  taxpayerHappiness: 80,
+  waypointSegment: null,
+  waypointPreview: null,
+  waypointPreviewLine: null,
+  addToLineStop: null,
+  loanTaken: false,       // one free $100k emergency loan available
+  gameOver: false,        // true when budget hits -$100k
+};
+
+// ============================================================
+// CALENDAR HELPERS
+// ============================================================
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+const MONTH_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAY_ABBR    = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function formatDate(d) {
+  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+function formatDateShort(d) {
+  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`;
+}
+
+function advanceDay(d) {
+  const next = new Date(d);
+  next.setDate(next.getDate() + 1);
+  return next;
+}
+
+// Returns true if date d is within a university semester window (any year)
+function isUniversitySemester(d) {
+  const m = d.getMonth() + 1; // 1-12
+  const day = d.getDate();
+  // Spring: Jan 10 – May 10
+  const inSpring = (m === 1 && day >= 10) || (m >= 2 && m <= 4) || (m === 5 && day <= 10);
+  // Fall: Aug 20 – Dec 15
+  const inFall   = (m === 8 && day >= 20) || (m >= 9 && m <= 11) || (m === 12 && day <= 15);
+  return inSpring || inFall;
+}
+
+// Returns true if this is a Nebraska football home game Saturday
+function isFootballGameDay(d) {
+  const key = d.toISOString().slice(0, 10);
+  return state.footballGameDates.includes(key);
+}
+
+// Generate Husker home game dates: every other Saturday, Sept 1 – Nov 30, max 8 per season
+// We compute for years 2026–2035 upfront
+function generateFootballDates() {
+  const dates = [];
+  for (let year = 2026; year <= 2040; year++) {
+    // Find first Saturday on or after Sept 1
+    let d = new Date(year, 8, 1); // Sept 1
+    while (d.getDay() !== 6) d = advanceDay(d); // advance to Saturday
+    const seasonEnd = new Date(year, 10, 30); // Nov 30
+    let gameCount = 0;
+    let skipNext = false; // alternate: play one, skip one
+    while (d <= seasonEnd && gameCount < 8) {
+      if (!skipNext) {
+        dates.push(d.toISOString().slice(0, 10));
+        gameCount++;
+      }
+      skipNext = !skipNext;
+      // Advance 7 days to next Saturday
+      d = new Date(d);
+      d.setDate(d.getDate() + 7);
+    }
+  }
+  return dates;
+}
+
+// Get effective weight for a zone given the current date
+function getEffectiveWeight(zone, date) {
+  let w = zone.weight;
+
+  if (zone.universityZone) {
+    if (isUniversitySemester(date)) {
+      w = Math.round(w * 1.45); // 45% boost during semester
+    } else {
+      w = Math.round(w * 0.55); // significant drop in summer/winter break
+    }
+  }
+
+  // Football game day: UNL main campus gets massive spike
+  if (zone.footballZone && isFootballGameDay(date)) {
+    w = Math.min(500, w + 400); // ~100k extra people, very high weight
+  }
+
+  return w;
+}
+
+// Community happiness → ridership multiplier
+// 100 happiness = 1.0×, 0 happiness = ~0.1× (100 riders/train cap effectively)
+function calcCommunityHappinessMult() {
+  const h = state.communityHappiness;
+  if (h >= 80) return 1.0;
+  if (h >= 60) return 0.75 + (h - 60) / 80;   // 0.75–1.0
+  if (h >= 40) return 0.50 + (h - 40) / 80;   // 0.50–0.75
+  if (h >= 20) return 0.25 + (h - 20) / 80;   // 0.25–0.50
+  return 0.10 + (h / 20) * 0.15;               // 0.10–0.25 (angry: ~100/train)
+}
+
+// Taxpayer happiness → ridership multiplier (budget hoarding penalty)
+function calcTaxpayerHappinessMult() {
+  const b = state.budget;
+  if (b <= 100000) return 1.0;
+  if (b <= 200000) return 0.90;
+  if (b <= 300000) return 0.80;
+  if (b <= 400000) return 0.70;
+  if (b <= 500000) return 0.58;
+  if (b <= 750000) return 0.42;
+  if (b <= 1000000) return 0.28;
+  return 0.15;  // hoarding $1M+ — taxpayers are furious
+}
+
+// Update taxpayer happiness state value to match budget curve
+function calcTaxpayerHappinessValue(budget) {
+  if (budget <= 50000)  return 90;
+  if (budget <= 100000) return 80;
+  if (budget <= 200000) return 70;
+  if (budget <= 300000) return 60;
+  if (budget <= 400000) return 55;
+  if (budget <= 500000) return 50;
+  if (budget <= 750000) return 38;
+  if (budget <= 1000000) return 25;
+  return 12;
+}
+
+// Update happiness meters each tick
+function updateHappinessMeters() {
+  // --- Community Happiness ---
+  // Drop if hot zones unserved for 90+ days (3 months)
+  const unservedHotZones = DEMAND_ZONES.filter(z => z.weight > 60 && !isZoneServed(z));
+  if (unservedHotZones.length > 0) {
+    state.daysSinceLastImprovement++;
+    if (state.daysSinceLastImprovement >= 90) {
+      // Drop 0.5 per day after 90 days of neglect
+      state.communityHappiness = Math.max(0, state.communityHappiness - 0.5);
+    }
+  } else {
+    // Gradually recover when hot zones are served
+    state.daysSinceLastImprovement = 0;
+    state.communityHappiness = Math.min(100, state.communityHappiness + 0.15);
+  }
+
+  // --- Taxpayer Happiness ---
+  // Directly calculated from budget — immediate feedback, no slow drift
+  state.taxpayerHappiness = calcTaxpayerHappinessValue(state.budget);
+}
+
+// Call this when a stop is placed or connection made near a hot zone
+function recordNetworkImprovement(lat, lng) {
+  const nearHotZone = DEMAND_ZONES.some(z => {
+    if (z.weight <= 60) return false;
+    const dist = Math.sqrt(Math.pow(lat - z.lat, 2) + Math.pow(lng - z.lng, 2));
+    return dist < z.radius * 3;
+  });
+  if (nearHotZone) {
+    state.daysSinceLastImprovement = 0;
+    state.communityHappiness = Math.min(100, state.communityHappiness + 5);
+  }
+}
+const map = L.map('map', {
+  center: [40.8136, -96.7026],
+  zoom: 13,
+  zoomControl: true,
+});
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap',
+  className: 'map-tiles',
+}).addTo(map);
+
+// Dark filter via CSS injection
+const style = document.createElement('style');
+style.textContent = `.map-tiles { filter: invert(1) hue-rotate(180deg) saturate(0.6) brightness(0.7); }`;
+document.head.appendChild(style);
+
+// Generate football game dates
+state.footballGameDates = generateFootballDates();
+
+// ============================================================
+// WARNING MARKERS — underserved high-demand zones
+// ============================================================
+function isZoneServed(zone) {
+  // A zone is "served" if any CONNECTED stop (on at least one line) is within 2× its radius
+  const connectedStops = state.stops.filter(s => s.lineIds.length > 0);
+  return connectedStops.some(stop => {
+    const dist = Math.sqrt(Math.pow(stop.lat - zone.lat, 2) + Math.pow(stop.lng - zone.lng, 2));
+    return dist < zone.radius * 2.5;
+  });
+}
+
+function updateWarningMarkers() {
+  state.warningMarkers.forEach(m => map.removeLayer(m));
+  state.warningMarkers = [];
+
+  // Show warnings for hot zones (raw weight > 60) that have no connected stop nearby
+  const hotZones = DEMAND_ZONES.filter(z => z.weight > 60);
+  hotZones.forEach(zone => {
+    if (!isZoneServed(zone)) {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="warning-marker" title="Underserved: ${zone.name}">
+          <div class="warning-pulse"></div>
+          <div class="warning-icon">⚠</div>
+          <div class="warning-label">${zone.name}</div>
+        </div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+      const marker = L.marker([zone.lat, zone.lng], { icon, interactive: false }).addTo(map);
+      state.warningMarkers.push(marker);
+    }
+  });
+}
+
+// ============================================================
+// HEATMAP
+// ============================================================
+function renderHeatmap() {
+  state.heatmapLayers.forEach(l => map.removeLayer(l));
+  state.heatmapLayers = [];
+
+  DEMAND_ZONES.forEach(z => {
+    // Use raw weight for color thresholds — not multiplied by growth
+    const rawWeight = z.weight;
+    // But show seasonal effect subtly via opacity
+    const effectiveW = getEffectiveWeight(z, state.currentDate);
+    const color = rawWeight >= 85 ? '#ff1a1a'
+                : rawWeight >= 70 ? '#ff4444'
+                : rawWeight >= 55 ? '#f0a500'
+                : '#00a884';
+    const opacity = 0.10 + (effectiveW / 200) * 0.35;
+
+    if (state.heatmapVisible) {
+      const circle = L.circle([z.lat, z.lng], {
+        radius: z.radius * 111000,
+        color: 'transparent',
+        fillColor: color,
+        fillOpacity: Math.min(0.6, opacity),
+      }).addTo(map);
+      state.heatmapLayers.push(circle);
+    }
+  });
+
+  updateWarningMarkers();
+}
+
+// ============================================================
+// DEMAND CALCULATION
+// ============================================================
+function calcStopDemand(stop, date) {
+  const d = date || state.currentDate;
+  let demand = 0;
+  DEMAND_ZONES.forEach(z => {
+    const dist = Math.sqrt(Math.pow(stop.lat - z.lat, 2) + Math.pow(stop.lng - z.lng, 2));
+    if (dist < z.radius * 2) {
+      const proximity = Math.max(0, 1 - dist / (z.radius * 2));
+      const w = getEffectiveWeight(z, d);
+      demand += w * proximity * state.cityGrowthMultiplier;
+    }
+  });
+  return Math.round(demand);
+}
+
+function calcNetworkRiders() {
+  if (state.stops.length === 0) return 0;
+  
+  // Base demand per stop
+  let total = 0;
+  state.stops.forEach(stop => {
+    total += calcStopDemand(stop);
+  });
+
+  // Network efficiency bonus: transfers increase ridership
+  const transfers = countTransfers();
+  const effBonus = 1 + (transfers * 0.08);
+
+  // Frequency bonus per line — starts modest at 1/hr, scales up with upgrades
+  let freqBonus = 1;
+  if (state.lines.length > 0) {
+    const avgFreq = state.lines.reduce((s, l) => s + l.frequency, 0) / state.lines.length;
+    freqBonus = 0.3 + (avgFreq * 0.07); // 1/hr → 0.37×, 5/hr → 0.65×, 10/hr → 1.0×
+  }
+
+  const communityMult = calcCommunityHappinessMult();
+  const taxpayerMult = calcTaxpayerHappinessMult();
+
+  return Math.round(total * effBonus * freqBonus * TICKET_FRACTION * state.fareMultiplier * communityMult * taxpayerMult);
+}
+
+function countTransfers() {
+  return state.stops.filter(s => s.lineIds.length > 1).length;
+}
+
+function calcNetworkEfficiency() {
+  if (state.stops.length === 0 || state.lines.length === 0) return 0;
+  const transfers = countTransfers();
+  const avgFreq = state.lines.length > 0 ? state.lines.reduce((s, l) => s + l.frequency, 0) / state.lines.length : 0;
+  const coverageScore = Math.min(100, state.stops.length * 8);
+  const transferScore = Math.min(100, transfers * 20);
+  const freqScore = avgFreq * 5;
+  return Math.round((coverageScore + transferScore + freqScore) / 3);
+}
+
+function calcDailyCost() {
+  // Base station maintenance: $150/stop/day
+  const stopCost = state.stops.length * 150;
+  // Operations per line: $200/day base + $120 per frequency unit
+  const lineCost = state.lines.reduce((s, l) => s + 200 + (l.frequency * 120), 0);
+  // Connection infrastructure: $30/connection/day
+  const connCount = state.lines.reduce((s, l) => s + Math.max(0, l.stopIds.length - 1), 0);
+  const connCost = connCount * 30;
+  return stopCost + lineCost + connCost;
+}
+
+// ============================================================
+// STOP PLACEMENT
+// ============================================================
+function createStopIcon(lineColor) {
+  return L.divIcon({
+    className: '',
+    html: `<div class="stop-marker" style="width:14px;height:14px;background:white;border:3px solid ${lineColor || '#666'};border-radius:50%;"></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
+function placeStop(lat, lng) {
+  if (state.stopsPlaced >= state.stopQuota) {
+    toast(`Stop quota full! Next stop unlocks in ${STOP_UNLOCK_DAYS - (state.totalDaysElapsed % STOP_UNLOCK_DAYS)} days.`);
+    return;
+  }
+  if (state.budget < STOP_COST) { toast('Insufficient budget! Need $' + STOP_COST.toLocaleString()); return; }
+  state.budget -= STOP_COST;
+  state.stopsPlaced++;
+
+  const id = ++state.stopIdCounter;
+  const stop = {
+    id,
+    lat, lng,
+    name: `Stop ${id}`,
+    lineIds: [],
+    marker: null,
+    placedAt: Date.now(),   // for refund window
+    refundInterval: null,   // countdown interval
+  };
+
+  const marker = L.marker([lat, lng], {
+    icon: createStopIcon(null),
+    draggable: false,
+    title: stop.name,
+  }).addTo(map);
+
+  marker.bindTooltip(stop.name, { permanent: false, direction: 'top', className: 'lta-tooltip' });
+  marker.on('click', () => handleStopClick(stop));
+  stop.marker = marker;
+  state.stops.push(stop);
+
+  // Start refund ring countdown
+  startRefundTimer(stop);
+
+  updateUI();
+  toast(`Placed ${stop.name} — remove within 30s for full refund`);
+  refreshStopPerformance();
+  updateWarningMarkers();
+  recordNetworkImprovement(lat, lng);
+}
+
+function startRefundTimer(stop) {
+  const REFUND_WINDOW = 30000; // 30 seconds
+  const circumference = 75.4; // 2π × 12
+
+  // Add SVG ring overlay to marker
+  const el = stop.marker.getElement();
+  if (!el) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:relative;width:14px;height:14px;';
+  const inner = el.querySelector('.stop-marker');
+  if (inner) {
+    el.style.overflow = 'visible';
+    const ring = document.createElement('div');
+    ring.style.cssText = 'position:absolute;top:-8px;left:-8px;width:30px;height:30px;pointer-events:none;';
+    ring.innerHTML = `<svg viewBox="0 0 30 30" width="30" height="30">
+      <circle cx="15" cy="15" r="12" fill="none" stroke="#3fb950" stroke-width="2.5"
+        stroke-dasharray="${circumference}" stroke-dashoffset="0" stroke-linecap="round"
+        transform="rotate(-90 15 15)" id="ring-${stop.id}"/>
+    </svg>`;
+    el.appendChild(ring);
+
+    const label = document.createElement('div');
+    label.className = 'refund-label';
+    label.id = `rlabel-${stop.id}`;
+    label.textContent = '60s ↩';
+    el.appendChild(label);
+  }
+
+  stop.refundInterval = setInterval(() => {
+    const elapsed = Date.now() - stop.placedAt;
+    const remaining = Math.max(0, REFUND_WINDOW - elapsed);
+    const progress = elapsed / REFUND_WINDOW;
+    const offset = circumference * progress;
+
+    const ringEl = document.getElementById(`ring-${stop.id}`);
+    const labelEl = document.getElementById(`rlabel-${stop.id}`);
+
+    if (ringEl) {
+      ringEl.style.strokeDashoffset = offset;
+      if (remaining < 15000) ringEl.style.stroke = '#ff4444';
+      else if (remaining < 30000) ringEl.style.stroke = '#f0a500';
+    }
+
+    if (labelEl) {
+      if (remaining <= 0) {
+        labelEl.remove();
+        ringEl && ringEl.parentElement && ringEl.parentElement.remove();
+        clearInterval(stop.refundInterval);
+        stop.refundInterval = null;
+      } else {
+        labelEl.textContent = `${Math.ceil(remaining / 1000)}s ↩`;
+      }
+    }
+
+    if (remaining <= 0) clearInterval(stop.refundInterval);
+  }, 500);
+}
+
+function handleStopClick(stop) {
+  if (state.mode === 'connect') {
+    if (!state.connectingFrom) {
+      state.connectingFrom = stop;
+      stop.marker.setIcon(createStopIcon('#f0a500'));
+      toast(`Connecting from ${stop.name} — click destination stop`);
+    } else if (state.connectingFrom.id !== stop.id) {
+      connectStops(state.connectingFrom, stop);
+      state.connectingFrom.marker.setIcon(createStopIcon(getStopColor(state.connectingFrom)));
+      state.connectingFrom = null;
+    }
+  } else if (state.mode === 'add-to-line') {
+    handleAddToLine(stop);
+  } else if (state.mode === 'delete') {
+    deleteStop(stop);
+  }
+}
+
+function deleteStop(stop) {
+  const elapsed = Date.now() - stop.placedAt;
+  const refundEligible = elapsed <= 30000;
+
+  if (refundEligible) {
+    // Within window: full refund, no demolition fee
+    state.budget += STOP_COST;
+    if (stop.refundInterval) { clearInterval(stop.refundInterval); stop.refundInterval = null; }
+    _removeStopFromMap(stop);
+    state.stopsPlaced = Math.max(0, state.stopsPlaced - 1);
+    toast(`Removed ${stop.name} — $${STOP_COST.toLocaleString()} refunded ✓`);
+  } else {
+    // After window: costs $10,000 to demolish
+    if (state.budget < DELETE_COST) {
+      toast(`Demolition costs $${DELETE_COST.toLocaleString()} — insufficient budget!`);
+      return;
+    }
+    state.budget -= DELETE_COST;
+    if (stop.refundInterval) { clearInterval(stop.refundInterval); stop.refundInterval = null; }
+    _removeStopFromMap(stop);
+    toast(`Demolished ${stop.name} — $${DELETE_COST.toLocaleString()} demolition fee charged`);
+  }
+  updateUI();
+}
+
+function _removeStopFromMap(stop) {
+  state.lines.forEach(line => {
+    if (line.stopIds.includes(stop.id)) {
+      line.stopIds = line.stopIds.filter(id => id !== stop.id);
+      redrawLine(line);
+    }
+  });
+  map.removeLayer(stop.marker);
+  state.stops = state.stops.filter(s => s.id !== stop.id);
+  updateWarningMarkers();
+}
+
+function getStopColor(stop) {
+  if (stop.lineIds.length === 0) return '#666';
+  const line = state.lines.find(l => l.id === stop.lineIds[0]);
+  return line ? line.color : '#666';
+}
+
+// ============================================================
+// LINES
+// ============================================================
+function createLine() {
+  if (state.budget < LINE_COST) { toast('Insufficient budget — need $20,000 to create a line!'); return; }
+
+  // Show confirm overlay instead of immediately charging
+  showConfirm(
+    `Create new line?`,
+    `This will cost <strong>$20,000</strong> and create a new blank line ready for stops.`,
+    () => {
+      state.budget -= LINE_COST;
+      const id = ++state.lineIdCounter;
+      const color = LINE_COLORS[state.lineColorIdx % LINE_COLORS.length];
+      state.lineColorIdx++;
+      const line = {
+        id,
+        name: `Line ${String.fromCharCode(64 + id)}`,
+        color,
+        stopIds: [],
+        polylines: [],
+        frequency: 1,
+        waypoints: {},
+        labelMarkers: [],
+      };
+      state.lines.push(line);
+      state.selectedLine = line;
+      updateUI();
+      renderLinesTab();
+      switchTab('lines');
+      log(`Created ${line.name} — $20,000 charged`, 'good');
+    }
+  );
+}
+
+const LINE_DELETE_COST = 1000;
+
+function deleteLine(line) {
+  showConfirm(
+    `Remove ${line.name}?`,
+    `This will remove the line and all its connections for <strong>$1,000</strong>. Stops remain on the map.`,
+    () => {
+      if (state.budget < LINE_DELETE_COST) { toast('Insufficient budget — need $1,000 to remove a line'); return; }
+      state.budget -= LINE_DELETE_COST;
+
+      // Remove polylines and labels from map
+      line.polylines.forEach(p => map.removeLayer(p));
+      if (line.labelMarkers) line.labelMarkers.forEach(m => map.removeLayer(m));
+
+      // Remove trains for this line
+      removeTrainsForLine(line.id);
+
+      // Strip this line from all stops
+      state.stops.forEach(stop => {
+        stop.lineIds = stop.lineIds.filter(id => id !== line.id);
+        // Recolor the stop icon
+        if (stop.lineIds.length === 0) {
+          stop.marker.setIcon(createStopIcon(null));
+        } else {
+          const nextLine = state.lines.find(l => l.id === stop.lineIds[0] && l.id !== line.id);
+          stop.marker.setIcon(createStopIcon(nextLine ? nextLine.color : '#666'));
+        }
+      });
+
+      state.lines = state.lines.filter(l => l.id !== line.id);
+      if (state.selectedLine && state.selectedLine.id === line.id) {
+        state.selectedLine = state.lines.length > 0 ? state.lines[state.lines.length - 1] : null;
+      }
+
+      updateUI();
+      renderLinesTab();
+      log(`Removed ${line.name} — $${LINE_DELETE_COST.toLocaleString()} charged`, 'warn');
+    }
+  );
+}
+
+// ============================================================
+// CONFIRM DIALOG
+// ============================================================
+function showConfirm(title, body, onConfirm) {
+  let overlay = document.getElementById('confirm-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'confirm-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:8888;background:rgba(13,17,23,0.82);display:flex;align-items:center;justify-content:center';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:28px 28px 22px;max-width:360px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.6)">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:900;color:#e6edf3;margin-bottom:8px">${title}</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:15px;color:#7d8590;margin-bottom:22px;line-height:1.5">${body}</div>
+      <div style="display:flex;gap:10px">
+        <button id="confirm-yes" style="flex:1;padding:11px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700;cursor:pointer">Confirm</button>
+        <button id="confirm-no" style="flex:1;padding:11px;background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:7px;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+  `;
+  overlay.style.display = 'flex';
+  document.getElementById('confirm-yes').onclick = () => { overlay.style.display = 'none'; onConfirm(); };
+  document.getElementById('confirm-no').onclick  = () => { overlay.style.display = 'none'; };
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
+}
+
+// Haversine distance in miles between two lat/lng points
+function distanceMiles(lat1, lng1, lat2, lng2) {
+  const R = 3958.8;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function calcConnectionCost(fromStop, toStop) {
+  const miles = distanceMiles(fromStop.lat, fromStop.lng, toStop.lat, toStop.lng);
+  const halfMiles = miles / 0.5;
+  return Math.max(5000, Math.round(halfMiles * CONNECT_COST_PER_HALF_MILE / 1000) * 1000);
+}
+
+function connectStops(fromStop, toStop) {
+  if (!state.selectedLine) { toast('Select a line first in the Lines tab!'); return; }
+  const line = state.selectedLine;
+
+  // Check 10-stop cap per line
+  const newStops = [fromStop, toStop].filter(s => !line.stopIds.includes(s.id));
+  if (line.stopIds.length + newStops.length > 10) {
+    toast(`Line ${line.name} is at the 10-stop limit!`);
+    return;
+  }
+
+  const cost = calcConnectionCost(fromStop, toStop);
+  if (state.budget < cost) { toast(`Insufficient budget! This segment costs $${cost.toLocaleString()}`); return; }
+  state.budget -= cost;
+
+  // Add stops to line if not already there
+  if (!line.stopIds.includes(fromStop.id)) {
+    line.stopIds.push(fromStop.id);
+    fromStop.lineIds.push(line.id);
+    fromStop.marker.setIcon(createStopIcon(line.color));
+  }
+  if (!line.stopIds.includes(toStop.id)) {
+    line.stopIds.push(toStop.id);
+    toStop.lineIds.push(line.id);
+    toStop.marker.setIcon(createStopIcon(toStop.lineIds.length > 1 ? '#fff' : line.color));
+  }
+
+  // Mark transfer stops
+  [fromStop, toStop].forEach(s => {
+    if (s.lineIds.length > 1) {
+      s.marker.setIcon(L.divIcon({
+        className: '',
+        html: `<div style="width:16px;height:16px;background:white;border:3px solid white;border-radius:0;outline:2px solid ${line.color}"></div>`,
+        iconSize: [16, 16], iconAnchor: [8, 8],
+      }));
+    }
+  });
+
+  // Draw polyline (with any waypoints)
+  if (!line.waypoints) line.waypoints = {};
+  const segKey = `${fromStop.id}-${toStop.id}`;
+  const wps = line.waypoints[segKey] || [];
+  const latlngs = [[fromStop.lat, fromStop.lng], ...wps, [toStop.lat, toStop.lng]];
+  const pl = L.polyline(latlngs, {
+    color: line.color, weight: 4, opacity: 0.9
+  }).addTo(map);
+  makeSegmentClickable(line, fromStop, toStop, pl);
+  line.polylines.push(pl);
+
+  const miles = distanceMiles(fromStop.lat, fromStop.lng, toStop.lat, toStop.lng);
+  drawLineLabels(line);
+  updateUI();
+  renderLinesTab();
+  spawnTrainForLine(line);
+  // Record improvement for both endpoints
+  recordNetworkImprovement(fromStop.lat, fromStop.lng);
+  recordNetworkImprovement(toStop.lat, toStop.lng);
+  toast(`Connected ${fromStop.name} → ${toStop.name} on ${line.name} — $${cost.toLocaleString()} (${miles.toFixed(1)}mi)`);
+}
+
+function drawLineLabels(line) {
+  // Remove old labels for this line
+  if (line.labelMarkers) line.labelMarkers.forEach(m => map.removeLayer(m));
+  line.labelMarkers = [];
+  if (line.stopIds.length < 2) return;
+
+  // Place label at midpoint of each segment
+  for (let i = 0; i < line.stopIds.length - 1; i++) {
+    const a = state.stops.find(s => s.id === line.stopIds[i]);
+    const b = state.stops.find(s => s.id === line.stopIds[i + 1]);
+    if (!a || !b) continue;
+
+    const midLat = (a.lat + b.lat) / 2;
+    const midLng = (a.lng + b.lng) / 2;
+
+    const labelIcon = L.divIcon({
+      className: '',
+      html: `<div style="
+        background:${line.color};
+        color:#fff;
+        font-family:'Barlow Condensed',sans-serif;
+        font-size:9px;
+        font-weight:900;
+        letter-spacing:1px;
+        text-transform:uppercase;
+        padding:1px 5px;
+        border-radius:3px;
+        border:1px solid rgba(0,0,0,0.4);
+        white-space:nowrap;
+        box-shadow:0 1px 3px rgba(0,0,0,0.4);
+        pointer-events:none;
+      ">${line.name}</div>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    });
+
+    const marker = L.marker([midLat, midLng], { icon: labelIcon, interactive: false, zIndexOffset: -50 }).addTo(map);
+    line.labelMarkers.push(marker);
+  }
+}
+
+function redrawLine(line) {
+  line.polylines.forEach(pl => map.removeLayer(pl));
+  line.polylines = [];
+  for (let i = 0; i < line.stopIds.length - 1; i++) {
+    const a = state.stops.find(s => s.id === line.stopIds[i]);
+    const b = state.stops.find(s => s.id === line.stopIds[i + 1]);
+    if (a && b) {
+      const segKey = `${a.id}-${b.id}`;
+      const wps = (line.waypoints && line.waypoints[segKey]) || [];
+      const latlngs = [[a.lat, a.lng], ...wps, [b.lat, b.lng]];
+      const pl = L.polyline(latlngs, {
+        color: line.color, weight: 4, opacity: 0.9
+      }).addTo(map);
+      makeSegmentClickable(line, a, b, pl);
+      line.polylines.push(pl);
+    }
+  }
+  drawLineLabels(line);
+  spawnTrainForLine(line);
+}
+
+// ============================================================
+// WAYPOINT ROUTING
+// ============================================================
+
+// Called when user clicks the map in waypoint mode
+function handleWaypointMapClick(lat, lng) {
+  if (!state.waypointSegment) {
+    toast('Click a line segment on the map first, then add curve points', 'warn');
+    return;
+  }
+  const seg = state.waypointSegment;
+  seg.points.push([lat, lng]);
+
+  // Add preview dot
+  if (!state.waypointPreview) state.waypointPreview = [];
+  const dot = L.circleMarker([lat, lng], {
+    radius: 5, color: seg.line.color, fillColor: '#fff', fillOpacity: 1, weight: 2
+  }).addTo(map);
+  state.waypointPreview.push(dot);
+
+  // Update preview polyline
+  const fromStop = state.stops.find(s => s.id === seg.fromId);
+  const toStop   = state.stops.find(s => s.id === seg.toId);
+  if (!fromStop || !toStop) return;
+  const pts = [[fromStop.lat, fromStop.lng], ...seg.points, [toStop.lat, toStop.lng]];
+  if (state.waypointPreviewLine) map.removeLayer(state.waypointPreviewLine);
+  state.waypointPreviewLine = L.polyline(pts, {
+    color: seg.line.color, weight: 3, opacity: 0.6, dashArray: '6 4'
+  }).addTo(map);
+
+  toast(`Curve point ${seg.points.length} added — right-click map to finish`, 'info');
+}
+
+// Commit waypoints and redraw the segment
+function commitWaypoints() {
+  const seg = state.waypointSegment;
+  if (!seg || seg.points.length === 0) { setMode('none'); return; }
+
+  if (!seg.line.waypoints) seg.line.waypoints = {};
+  const segKey = `${seg.fromId}-${seg.toId}`;
+  // Append new points to any existing waypoints for this segment
+  const existing = seg.line.waypoints[segKey] || [];
+  seg.line.waypoints[segKey] = [...existing, ...seg.points];
+
+  // Clean up preview
+  if (state.waypointPreview) { state.waypointPreview.forEach(m => map.removeLayer(m)); state.waypointPreview = null; }
+  if (state.waypointPreviewLine) { map.removeLayer(state.waypointPreviewLine); state.waypointPreviewLine = null; }
+
+  state.waypointSegment = null;
+  redrawLine(seg.line);
+  log(`Route curve saved — ${seg.line.waypoints[segKey].length} bend points total on segment`, 'good');
+  setMode('none');
+}
+
+// Make a line segment clickable for waypoint editing
+function makeSegmentClickable(line, fromStop, toStop, polyline) {
+  polyline.on('click', (e) => {
+    if (state.mode !== 'waypoint') return;
+    L.DomEvent.stopPropagation(e);
+
+    // Clean up previous session
+    if (state.waypointPreview) { state.waypointPreview.forEach(m => map.removeLayer(m)); state.waypointPreview = []; }
+    if (state.waypointPreviewLine) { map.removeLayer(state.waypointPreviewLine); state.waypointPreviewLine = null; }
+
+    // Load any already-committed waypoints for this segment so user can see them
+    const segKey = `${fromStop.id}-${toStop.id}`;
+    const existingWps = (line.waypoints && line.waypoints[segKey]) || [];
+
+    state.waypointSegment = { line, fromId: fromStop.id, toId: toStop.id, points: [] };
+    state.waypointPreview = [];
+
+    // Show existing points as gray dots (already committed)
+    existingWps.forEach(pt => {
+      const dot = L.circleMarker(pt, {
+        radius: 4, color: '#7d8590', fillColor: '#7d8590', fillOpacity: 0.7, weight: 1
+      }).addTo(map);
+      state.waypointPreview.push(dot);
+    });
+
+    toast(`Editing curve: ${fromStop.name} → ${toStop.name} — click map to add more bend points, right-click to finish`, 'info');
+  });
+}
+
+// ============================================================
+// ADD STOP TO EXISTING LINE
+// ============================================================
+function handleAddToLine(clickedStop) {
+  if (!state.selectedLine) {
+    toast('Select a line in the Lines tab first!', 'warn');
+    setMode('none');
+    return;
+  }
+  const line = state.selectedLine;
+
+  if (line.stopIds.includes(clickedStop.id)) {
+    toast(`${clickedStop.name} is already on ${line.name}`, 'warn');
+    return;
+  }
+  if (line.stopIds.length < 2) {
+    toast('Line needs at least 2 stops before inserting', 'warn');
+    return;
+  }
+  if (line.stopIds.length >= 10) {
+    toast(`${line.name} is at the 10-stop limit!`, 'warn');
+    return;
+  }
+
+  // Find best insertion point: minimize added distance
+  let bestIdx = 1;
+  let bestCost = Infinity;
+  for (let i = 0; i < line.stopIds.length - 1; i++) {
+    const a = state.stops.find(s => s.id === line.stopIds[i]);
+    const b = state.stops.find(s => s.id === line.stopIds[i + 1]);
+    if (!a || !b) continue;
+    const added = distanceMiles(a.lat, a.lng, clickedStop.lat, clickedStop.lng)
+                + distanceMiles(clickedStop.lat, clickedStop.lng, b.lat, b.lng)
+                - distanceMiles(a.lat, a.lng, b.lat, b.lng);
+    if (added < bestCost) { bestCost = added; bestIdx = i + 1; }
+  }
+
+  // Cost = distance to nearest neighbour × rate
+  const prevStop = state.stops.find(s => s.id === line.stopIds[bestIdx - 1]);
+  const nextStop = state.stops.find(s => s.id === line.stopIds[bestIdx]);
+  const cost = Math.max(5000,
+    Math.round((
+      calcConnectionCost(prevStop, clickedStop) / 2 +
+      calcConnectionCost(clickedStop, nextStop) / 2
+    ) / 1000) * 1000
+  );
+
+  if (state.budget < cost) {
+    toast(`Insufficient budget — insertion costs $${cost.toLocaleString()}`, 'warn');
+    return;
+  }
+
+  state.budget -= cost;
+  line.stopIds.splice(bestIdx, 0, clickedStop.id);
+  clickedStop.lineIds.push(line.id);
+  clickedStop.marker.setIcon(createStopIcon(line.color));
+
+  redrawLine(line);
+  updateUI();
+  renderLinesTab();
+  recordNetworkImprovement(clickedStop.lat, clickedStop.lng);
+  toast(`Inserted ${clickedStop.name} into ${line.name} at position ${bestIdx + 1} — $${cost.toLocaleString()}`, 'good');
+  setMode('none');
+}
+const trainState = {}; // keyed by `${lineId}-${trainIdx}`: { segIdx, t, dir }
+let animFrame = null;
+
+function spawnTrainForLine(line) {
+  // Remove existing trains for this line
+  removeTrainsForLine(line.id);
+  if (line.stopIds.length < 2) return;
+
+  // One animated train per frequency unit on the line
+  for (let i = 0; i < line.frequency; i++) {
+    const key = `${line.id}-${i}`;
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:20px;height:12px;background:${line.color};border-radius:3px;border:2px solid #000;box-shadow:0 1px 4px rgba(0,0,0,0.5);opacity:0.95"></div>`,
+      iconSize: [20, 12],
+      iconAnchor: [10, 6],
+    });
+    const startStop = state.stops.find(s => s.id === line.stopIds[0]);
+    if (!startStop) continue;
+    const marker = L.marker([startStop.lat, startStop.lng], { icon, interactive: false, zIndexOffset: -100 }).addTo(map);
+    // Stagger starting position
+    const startSeg = i % (line.stopIds.length - 1);
+    trainState[key] = { marker, line, segIdx: startSeg, t: i / line.frequency, dir: 1 };
+  }
+
+  startAnimLoop();
+}
+
+function removeTrainsForLine(lineId) {
+  Object.keys(trainState).filter(k => k.startsWith(`${lineId}-`)).forEach(k => {
+    if (trainState[k].marker) map.removeLayer(trainState[k].marker);
+    delete trainState[k];
+  });
+}
+
+function removeAllTrains() {
+  Object.keys(trainState).forEach(k => {
+    if (trainState[k].marker) map.removeLayer(trainState[k].marker);
+    delete trainState[k];
+  });
+}
+
+let lastAnimTime = 0;
+function startAnimLoop() {
+  if (animFrame) return;
+  function tick(ts) {
+    const dt = Math.min((ts - lastAnimTime) / 1000, 0.1);
+    lastAnimTime = ts;
+
+    Object.values(trainState).forEach(train => {
+      const { line } = train;
+      // Safety: must have at least 2 connected stops to move
+      if (!line || line.stopIds.length < 2) return;
+
+      const totalSegs = line.stopIds.length - 1;
+      // Clamp segIdx to valid range for this line
+      if (train.segIdx >= totalSegs) { train.segIdx = totalSegs - 1; train.t = 1; train.dir = -1; }
+      if (train.segIdx < 0) { train.segIdx = 0; train.t = 0; train.dir = 1; }
+
+      const speedPerSeg = line.frequency * 0.015;
+      train.t += dt * train.dir * speedPerSeg;
+
+      if (train.t >= 1) {
+        train.t = 1;
+        if (train.segIdx < totalSegs - 1) {
+          train.segIdx++;
+          train.t = 0;
+        } else {
+          train.dir = -1;
+        }
+      } else if (train.t <= 0) {
+        train.t = 0;
+        if (train.segIdx > 0) {
+          train.segIdx--;
+          train.t = 1;
+        } else {
+          train.dir = 1;
+        }
+      }
+
+      // Only interpolate between stops that are actually adjacent on this line
+      const aId = line.stopIds[train.segIdx];
+      const bId = line.stopIds[train.segIdx + 1];
+      if (aId === undefined || bId === undefined) return;
+
+      const aStop = state.stops.find(s => s.id === aId);
+      const bStop = state.stops.find(s => s.id === bId);
+      if (!aStop || !bStop) return;
+
+      // Verify both stops are still on this line (defensive check)
+      if (!aStop.lineIds.includes(line.id) || !bStop.lineIds.includes(line.id)) return;
+
+      // Build full latlng path for this segment including waypoints
+      const segKey = `${aStop.id}-${bStop.id}`;
+      const revSegKey = `${bStop.id}-${aStop.id}`;
+      const wps = (line.waypoints && (line.waypoints[segKey] || line.waypoints[revSegKey])) || [];
+      let path;
+      if (line.waypoints && line.waypoints[revSegKey] && !line.waypoints[segKey]) {
+        // travelling in reverse over a forward-defined waypoint path
+        path = [[bStop.lat, bStop.lng], ...wps.slice().reverse(), [aStop.lat, aStop.lng]];
+      } else {
+        path = [[aStop.lat, aStop.lng], ...wps, [bStop.lat, bStop.lng]];
+      }
+
+      // Interpolate along path
+      const t = train.t;
+      let lat, lng;
+      if (path.length === 2) {
+        lat = path[0][0] + (path[1][0] - path[0][0]) * t;
+        lng = path[0][1] + (path[1][1] - path[0][1]) * t;
+      } else {
+        // multi-point: find sub-segment
+        const totalPts = path.length - 1;
+        const scaled = t * totalPts;
+        const ptIdx = Math.min(Math.floor(scaled), totalPts - 1);
+        const ptT = scaled - ptIdx;
+        lat = path[ptIdx][0] + (path[ptIdx + 1][0] - path[ptIdx][0]) * ptT;
+        lng = path[ptIdx][1] + (path[ptIdx + 1][1] - path[ptIdx][1]) * ptT;
+      }
+      train.marker.setLatLng([lat, lng]);
+    });
+
+    animFrame = requestAnimationFrame(tick);
+  }
+  animFrame = requestAnimationFrame(tick);
+}
+
+function stopAnimLoop() {
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+}
+
+map.on('click', (e) => {
+  if (state.mode === 'place-stop') {
+    placeStop(e.latlng.lat, e.latlng.lng);
+  } else if (state.mode === 'waypoint') {
+    handleWaypointMapClick(e.latlng.lat, e.latlng.lng);
+  }
+});
+
+// Right-click on map = commit waypoints
+map.on('contextmenu', (e) => {
+  if (state.mode === 'waypoint') {
+    L.DomEvent.preventDefault(e.originalEvent);
+    commitWaypoints();
+  }
+});
+
+// ============================================================
+// GAME TICK
+// ============================================================
+function gameTick() {
+  const prevDate = new Date(state.currentDate);
+  state.currentDate = advanceDay(state.currentDate);
+  state.totalDaysElapsed++;
+
+  state.dailyRiders = calcNetworkRiders();
+  state.totalRiders += state.dailyRiders;
+
+  const revenue = state.dailyRiders * state.fare;
+  const cost = calcDailyCost();
+  const net = revenue - cost;
+  state.budget += net;
+
+  const t = state.totalDaysElapsed;
+
+  // Unlock new stop slot every 30 days
+  state.stopQuota = INITIAL_STOP_QUOTA + Math.floor((t - 1) / STOP_UNLOCK_DAYS);
+  const prevQuota = INITIAL_STOP_QUOTA + Math.floor((t - 2) / STOP_UNLOCK_DAYS);
+  if (state.stopQuota > prevQuota) {
+    toast(`📍 New stop slot unlocked! Quota: ${state.stopQuota} stops`, 'good');
+  }
+
+  // Unlock one frequency upgrade token every 60 days
+  const newFreqTokens = Math.floor((t - 1) / FREQ_UNLOCK_DAYS);
+  const prevFreqTokens = Math.floor((t - 2) / FREQ_UNLOCK_DAYS);
+  if (newFreqTokens > prevFreqTokens) {
+    state.freqUpgradesAvailable++;
+    toast(`🚆 Frequency upgrade available! (${state.freqUpgradesAvailable} pending)`, 'info');
+    if (document.querySelector('.tab-btn[data-tab="lines"]').classList.contains('active')) renderLinesTab();
+  }
+
+  // Football game day notification
+  const d = state.currentDate;
+  if (isFootballGameDay(d)) {
+    toast(`🏈 HUSKER HOME GAME — UNL demand spike!`, 'game');
+    if (state.heatmapVisible) renderHeatmap();
+  }
+
+  // Season transition toasts
+  const prev = prevDate;
+  const wasInSemester = isUniversitySemester(prev);
+  const nowInSemester = isUniversitySemester(d);
+  if (!wasInSemester && nowInSemester) {
+    const m = d.getMonth() + 1;
+    toast(`🎓 ${m < 6 ? 'Spring' : 'Fall'} semester begins — university ridership up!`, 'good');
+    if (state.heatmapVisible) renderHeatmap();
+  } else if (wasInSemester && !nowInSemester) {
+    toast(`🏖️ Semester ends — university ridership drops`, 'warn');
+    if (state.heatmapVisible) renderHeatmap();
+  }
+
+  // Update happiness meters
+  const prevCommunity = Math.round(state.communityHappiness);
+  const prevTaxpayer = Math.round(state.taxpayerHappiness);
+  updateHappinessMeters();
+
+  // Community happiness milestone warnings
+  const currC = Math.round(state.communityHappiness);
+  if (prevCommunity > 50 && currC <= 50) toast('😤 Community frustration growing — serve unmet demand zones!', 'warn');
+  if (prevCommunity > 30 && currC <= 30) toast('😠 Community very unhappy — ridership dropping significantly!', 'danger');
+  if (prevCommunity > 10 && currC <= 10) toast('🚨 Community furious — minimum ridership reached!', 'danger');
+
+  // Taxpayer threshold warnings
+  if (state.budget >= 1000000 && state.totalDaysElapsed % 30 === 0)
+    toast('💸 Taxpayers angry — hoarding $1M+ in transit funds!', 'danger');
+  else if (state.budget >= 500000 && state.totalDaysElapsed % 60 === 0)
+    toast('💰 Taxpayers unhappy — invest that surplus in the network!', 'warn');
+
+  // City growth
+  if (state.totalRiders > 0) {
+    const growthFactor = 1 + Math.log10(1 + state.totalRiders) * 0.002;
+    state.cityGrowthMultiplier = Math.min(3.0, state.cityGrowthMultiplier * growthFactor);
+  }
+
+  // Game over check
+  if (state.budget <= -100000 && !state.gameOver) {
+    triggerGameOver();
+    return;
+  }
+
+  // Warn when getting close
+  if (state.budget < -50000 && state.budget > -100000 && state.totalDaysElapsed % 5 === 0)
+    log(`⚠️ Budget critical — $${Math.round(state.budget).toLocaleString()} — bankruptcy at -$100,000!`, 'danger');
+  else if (state.budget < 0 && state.budget > -50000 && state.totalDaysElapsed % 10 === 0)
+    log(`🔴 Budget in the red — cut costs or boost ridership fast!`, 'warn');
+
+  updateUI();
+  checkMilestones();
+}
+
+function setSpeed(speed) {
+  clearInterval(state.tickInterval);
+  state.gameSpeed = speed;
+  document.querySelectorAll('.speed-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.speed) === speed);
+  });
+  if (speed > 0) {
+    const interval = Math.max(100, 2000 / speed);
+    state.tickInterval = setInterval(gameTick, interval);
+    startAnimLoop();
+  } else {
+    stopAnimLoop();
+  }
+}
+
+// ============================================================
+// MILESTONES
+// ============================================================
+function checkMilestones() {
+  document.querySelectorAll('.milestone').forEach(el => {
+    const threshold = parseInt(el.dataset.threshold);
+    if (state.dailyRiders >= threshold && !el.classList.contains('done')) {
+      el.classList.add('done');
+      toast(`🎉 Milestone: ${threshold.toLocaleString()} daily riders!`, 'good');
+    }
+  });
+}
+
+// ============================================================
+// UI UPDATE
+// ============================================================
+function updateUI() {
+  const riders = state.dailyRiders;
+  const revenue = riders * state.fare;
+  const cost = calcDailyCost();
+  const net = revenue - cost;
+  const eff = calcNetworkEfficiency();
+
+  document.getElementById('stat-budget').textContent = `$${Math.round(state.budget).toLocaleString()}`;
+  document.getElementById('stat-budget').className = `value ${state.budget < 0 ? 'red' : ''}`;
+  document.getElementById('stat-riders').textContent = riders.toLocaleString();
+  document.getElementById('stat-revenue').textContent = `$${Math.round(revenue).toLocaleString()}`;
+  document.getElementById('stat-cost').textContent = `$${Math.round(cost).toLocaleString()}`;
+
+  const netEl = document.getElementById('stat-net');
+  netEl.textContent = `${net >= 0 ? '+' : ''}$${Math.round(net).toLocaleString()}`;
+  netEl.className = `value ${net >= 0 ? 'green' : 'red'}`;
+
+  // Calendar display
+  const d = state.currentDate;
+  const dayName = DAY_ABBR[d.getDay()];
+  const isGameDay = isFootballGameDay(d);
+  const isSemester = isUniversitySemester(d);
+  let dateLabel = `${dayName}, ${formatDate(d)}`;
+  if (isGameDay) dateLabel += ' 🏈';
+  document.getElementById('game-time').textContent = dateLabel;
+
+  // Seasonal badge
+  let seasonBadge = '';
+  if (isGameDay) seasonBadge = '🏈 GAME DAY';
+  else if (isSemester) {
+    const m = d.getMonth() + 1;
+    seasonBadge = m < 6 ? '🎓 Spring Semester' : '🎓 Fall Semester';
+  } else {
+    seasonBadge = '☀️ Break';
+  }
+  const seasonEl = document.getElementById('season-badge');
+  if (seasonEl) seasonEl.textContent = seasonBadge;
+
+  // Quota display
+  const t = state.totalDaysElapsed;
+  const daysUntilNext = STOP_UNLOCK_DAYS - ((t) % STOP_UNLOCK_DAYS);
+  const quotaUsed = state.stopsPlaced;
+  const quotaMax = state.stopQuota;
+  document.getElementById('quota-used').textContent = quotaUsed;
+  document.getElementById('quota-max').textContent = quotaMax;
+  document.getElementById('quota-next').textContent = quotaUsed >= quotaMax
+    ? ` · next in ${daysUntilNext}d` : '';
+  const quotaPct = quotaMax > 0 ? Math.min(100, (quotaUsed / quotaMax) * 100) : 0;
+  document.getElementById('quota-bar').style.width = `${quotaPct}%`;
+  document.getElementById('quota-bar').style.background = quotaUsed >= quotaMax ? 'var(--danger)' : 'var(--accent)';
+
+  document.getElementById('ns-stops').textContent = state.stops.length;
+  document.getElementById('ns-lines').textContent = state.lines.length;
+  document.getElementById('ns-conns').textContent = state.lines.reduce((s, l) => s + Math.max(0, l.stopIds.length - 1), 0);
+  document.getElementById('ns-transfers').textContent = countTransfers();
+  document.getElementById('ns-eff').textContent = eff > 0 ? `${eff}%` : '—';
+  document.getElementById('stat-freq-upgrades').textContent = state.freqUpgradesAvailable;
+
+  // Bottom bar happiness meters
+  const ch = Math.round(state.communityHappiness);
+  const th = Math.round(state.taxpayerHappiness);
+  const cFace = ch >= 70 ? '😊' : ch >= 50 ? '😐' : ch >= 30 ? '😟' : '😡';
+  const tFace = th >= 70 ? '😊' : th >= 50 ? '😐' : th >= 30 ? '😟' : '😡';
+  const cColor = ch >= 70 ? '#3fb950' : ch >= 50 ? '#f0a500' : ch >= 30 ? '#ff8c00' : '#ff4444';
+  const tColor = th >= 70 ? '#3fb950' : th >= 50 ? '#f0a500' : th >= 30 ? '#ff8c00' : '#ff4444';
+
+  const commFillEl = document.getElementById('comm-bar-fill');
+  const taxFillEl  = document.getElementById('tax-bar-fill');
+  const commValEl  = document.getElementById('comm-val-bar');
+  const taxValEl   = document.getElementById('tax-val-bar');
+  const commFaceEl = document.getElementById('comm-face-bar');
+  const taxFaceEl  = document.getElementById('tax-face-bar');
+  const commDescEl = document.getElementById('comm-desc-bar');
+  const taxDescEl  = document.getElementById('tax-desc-bar');
+
+  if (commFillEl) { commFillEl.style.width = `${ch}%`; commFillEl.style.background = cColor; }
+  if (taxFillEl)  { taxFillEl.style.width  = `${th}%`; taxFillEl.style.background  = tColor; }
+  if (commValEl)  { commValEl.textContent = `${ch}%`; commValEl.style.color = cColor; }
+  if (taxValEl)   { taxValEl.textContent  = `${th}%`; taxValEl.style.color  = tColor; }
+  if (commFaceEl) commFaceEl.textContent = cFace;
+  if (taxFaceEl)  taxFaceEl.textContent  = tFace;
+
+  const cDesc = ch >= 70 ? 'Community satisfied with service'
+              : ch >= 50 ? 'Some zones underserved — build more!'
+              : ch >= 30 ? 'Riders frustrated — ridership falling'
+              : 'Community furious — near min ridership!';
+  const tDesc = th >= 70 ? 'Budget healthy — keep investing'
+              : th >= 50 ? 'Budget surplus — spend on upgrades'
+              : th >= 30 ? 'Hoarding funds — taxpayers angry!'
+              : 'Extreme hoarding — severe ridership loss!';
+  if (commDescEl) commDescEl.textContent = cDesc;
+  if (taxDescEl)  taxDescEl.textContent  = tDesc;
+}
+
+function renderLinesTab() {
+  const list = document.getElementById('lines-list');
+  if (state.lines.length === 0) {
+    list.innerHTML = `<p style="color:var(--text-muted);font-size:13px">No lines yet. Create a line in the Build tab.</p>`;
+    return;
+  }
+
+  list.innerHTML = '';
+  state.lines.forEach(line => {
+    const stopsOnLine = line.stopIds.length;
+    const item = document.createElement('div');
+    item.className = `line-item ${state.selectedLine && state.selectedLine.id === line.id ? 'selected' : ''}`;
+    item.style.position = 'relative';
+    item.innerHTML = `
+      <div class="line-dot" style="background:${line.color}"></div>
+      <div class="line-info">
+        <div class="name">${line.name}</div>
+        <div class="stats">${stopsOnLine} stop${stopsOnLine !== 1 ? 's' : ''} · ${line.frequency} trains/hr</div>
+      </div>
+      <button class="line-delete-btn" title="Remove line — $1,000" style="margin-left:auto;background:none;border:1px solid #ff444466;color:#ff4444;border-radius:5px;padding:2px 8px;font-size:12px;cursor:pointer;flex-shrink:0;font-family:'Barlow Condensed',sans-serif;font-weight:700">✕</button>
+    `;
+    item.querySelector('.line-delete-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteLine(line);
+    });
+    item.addEventListener('click', () => {
+      state.selectedLine = line;
+      renderLinesTab();
+      renderLineDetail(line);
+    });
+    list.appendChild(item);
+  });
+
+  if (state.selectedLine) renderLineDetail(state.selectedLine);
+}
+
+function renderLineDetail(line) {
+  const card = document.getElementById('line-detail-card');
+  const content = document.getElementById('line-detail-content');
+  card.style.display = 'block';
+
+  const stopNames = line.stopIds.map(id => {
+    const s = state.stops.find(s => s.id === id);
+    return s ? s.name : '?';
+  }).join(' → ');
+
+  // Calc total line length
+  let totalMiles = 0;
+  for (let i = 0; i < line.stopIds.length - 1; i++) {
+    const a = state.stops.find(s => s.id === line.stopIds[i]);
+    const b = state.stops.find(s => s.id === line.stopIds[i+1]);
+    if (a && b) totalMiles += distanceMiles(a.lat, a.lng, b.lat, b.lng);
+  }
+
+  // Frequency pip display (filled dots = current freq, empty = upgradeable)
+  const maxDisplay = Math.max(line.frequency + 3, 5);
+  const pips = Array.from({length: maxDisplay}, (_, i) =>
+    `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin:0 2px;background:${i < line.frequency ? line.color : 'var(--border)'};border:1px solid ${i < line.frequency ? line.color : 'var(--text-muted)'}"></span>`
+  ).join('');
+
+  const canUpgrade = state.freqUpgradesAvailable > 0;
+
+  content.innerHTML = `
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Line Name</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <div style="width:12px;height:12px;border-radius:50%;background:${line.color};flex-shrink:0"></div>
+        <input id="line-name-input-${line.id}" type="text" value="${line.name}"
+          style="flex:1;background:var(--panel-inner);border:1.5px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;outline:none">
+        <button id="line-name-save-${line.id}" style="padding:5px 10px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:1px">SAVE</button>
+      </div>
+    </div>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);margin-bottom:8px;word-break:break-all">${stopNames || 'No stops connected'}</div>
+    ${totalMiles > 0 ? `<div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);margin-bottom:10px">Length: ${totalMiles.toFixed(1)} miles · ${line.stopIds.length}/10 stops</div>` : ''}
+    <div style="margin-bottom:8px">
+      <div style="font-size:10px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Frequency: <span style="color:${line.color};font-weight:700">${line.frequency}/hr</span></div>
+      <div>${pips}</div>
+    </div>
+    <button id="btn-upgrade-freq-${line.id}" style="width:100%;padding:7px 10px;border:1.5px solid ${canUpgrade ? 'var(--accent2)' : 'var(--border)'};background:var(--panel);color:${canUpgrade ? 'var(--accent2)' : 'var(--text-muted)'};font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;cursor:${canUpgrade ? 'pointer' : 'not-allowed'};text-transform:uppercase;text-align:left;border-radius:var(--radius)">
+      ${canUpgrade ? `▲ Upgrade to ${line.frequency+1}/hr — $${FREQ_UPGRADE_COST.toLocaleString()} (${state.freqUpgradesAvailable} avail.)` : `▲ Upgrade locked · next in ${FREQ_UNLOCK_DAYS - (state.totalDaysElapsed % FREQ_UNLOCK_DAYS)}d`}
+    </button>
+  `;
+
+  document.getElementById(`btn-upgrade-freq-${line.id}`).addEventListener('click', () => {
+    if (!canUpgrade) return;
+    if (state.budget < FREQ_UPGRADE_COST) { toast(`Need $${FREQ_UPGRADE_COST.toLocaleString()} to upgrade frequency`); return; }
+    state.budget -= FREQ_UPGRADE_COST;
+    state.freqUpgradesAvailable--;
+    line.frequency++;
+    spawnTrainForLine(line); // respawn with new count
+    toast(`${line.name} upgraded to ${line.frequency}/hr`);
+    renderLinesTab();
+    updateUI();
+  });
+
+  document.getElementById(`line-name-save-${line.id}`).addEventListener('click', () => {
+    const input = document.getElementById(`line-name-input-${line.id}`);
+    const newName = input.value.trim().toUpperCase();
+    if (!newName) return;
+    line.name = newName;
+    drawLineLabels(line); // redraw map labels with new name
+    renderLinesTab();
+    toast(`Line renamed to ${newName}`);
+  });
+
+  // Save on Enter key
+  document.getElementById(`line-name-input-${line.id}`).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById(`line-name-save-${line.id}`).click();
+  });
+}
+
+function renderDemandBars() {
+  const container = document.getElementById('demand-bars');
+  const sorted = [...DEMAND_ZONES].sort((a, b) => b.weight - a.weight);
+  container.innerHTML = '';
+  sorted.forEach(z => {
+    const effective = Math.round(getEffectiveWeight(z, state.currentDate) * state.cityGrowthMultiplier);
+    const base = z.weight;
+    const pct = Math.min(100, (effective / 200) * 100);
+    const isUp = effective > base;
+    const isDown = effective < base;
+    const indicator = z.footballZone && isFootballGameDay(state.currentDate) ? ' 🏈'
+                    : z.universityZone && isUniversitySemester(state.currentDate) ? ' 🎓'
+                    : z.universityZone ? ' 📅' : '';
+    const row = document.createElement('div');
+    row.className = 'demand-bar-row';
+    row.innerHTML = `
+      <span class="zone-name" title="${z.name}">${z.name}${indicator}</span>
+      <div class="demand-bar-bg"><div class="demand-bar-fill" style="width:${pct}%;background:${isUp ? 'var(--accent)' : isDown ? '#aaa' : 'var(--accent2)'}"></div></div>
+      <span class="demand-bar-val" style="color:${isUp ? 'var(--accent)' : 'var(--accent2)'}">${effective}</span>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function refreshStopPerformance() {
+  const container = document.getElementById('stop-performance');
+  if (state.stops.length === 0) {
+    container.textContent = 'Place stops to see performance data.';
+    return;
+  }
+  const sorted = [...state.stops].sort((a, b) => calcStopDemand(b) - calcStopDemand(a));
+  container.innerHTML = sorted.slice(0, 8).map(s => {
+    const d = calcStopDemand(s);
+    const bar = Math.max(0, Math.min(12, Math.round((d / 100) * 12)));
+    return `<div style="margin-bottom:5px;font-family:'Share Tech Mono',monospace">
+      <span style="color:var(--text-muted);font-size:10px">${s.name}</span><br>
+      <span style="color:var(--accent2)">${'▪'.repeat(bar)}</span><span style="color:var(--border)">${'▪'.repeat(12 - bar)}</span>
+      <span style="color:var(--accent);font-size:10px"> ${d}</span>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// AI ADVISOR
+// ============================================================
+async function callAdvisor(prompt) {
+  const advisorText = document.getElementById('advisor-text');
+  advisorText.innerHTML = `<span id="advisor-loading">Analyzing<span class="typing-dot">.</span><span class="typing-dot">.</span><span class="typing-dot">.</span></span>`;
+
+  const d = state.currentDate;
+  const networkSummary = `
+Lincoln, NE Subway Network (${formatDate(d)}):
+- Season: ${isUniversitySemester(d) ? (d.getMonth() < 6 ? 'Spring Semester' : 'Fall Semester') : 'Break'}${isFootballGameDay(d) ? ' — FOOTBALL GAME DAY' : ''}
+- Stops: ${state.stops.length}
+- Lines: ${state.lines.length}
+- Fare: $${state.fare.toFixed(2)} (ridership multiplier: ${state.fareMultiplier.toFixed(2)}×)
+- Daily riders: ${state.dailyRiders}
+- Budget: $${Math.round(state.budget).toLocaleString()}
+- Transfer stops: ${countTransfers()}
+- Network efficiency: ${calcNetworkEfficiency()}%
+- Lines: ${state.lines.map(l => `${l.name} (${l.stopIds.length} stops, ${l.frequency} trains/hr)`).join(', ')}
+- City growth multiplier: ${state.cityGrowthMultiplier.toFixed(2)}x
+- Days elapsed: ${state.totalDaysElapsed}
+
+High demand zones: ${DEMAND_ZONES.filter(z => z.weight > 60).map(z => z.name).join(', ')}
+`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: `You are a transit planning advisor for the Lincoln Transit Authority, a subway simulation game set in Lincoln, Nebraska. 
+You analyze the player's network and give concise, actionable advice about ridership, demand, and network efficiency. 
+Keep responses to 3-5 sentences. Be specific to Lincoln neighborhoods. Speak like a knowledgeable transit planner, not a generic assistant.`,
+        messages: [{ role: 'user', content: `${networkSummary}\n\n${prompt}` }]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || 'Unable to get analysis.';
+    advisorText.textContent = text;
+  } catch (err) {
+    advisorText.textContent = 'Advisor unavailable. Check your connection.';
+  }
+}
+
+// ============================================================
+// MESSAGE LOG
+// ============================================================
+function toast(msg, type) { log(msg, type); } // backward compat
+
+function log(msg, type) {
+  const dispatch = document.getElementById('msg-dispatch');
+  const entry = document.createElement('div');
+  entry.className = `msg-entry${type ? ' msg-'+type : ''}`;
+  const d = state.currentDate;
+  const ts = d ? `[${DAY_ABBR[d.getDay()]} ${formatDate(d)}] ` : '';
+  entry.textContent = ts + msg;
+  dispatch.prepend(entry);
+  while (dispatch.children.length > 40) dispatch.removeChild(dispatch.lastChild);
+}
+
+// ============================================================
+// EVENT LISTENERS
+// ============================================================
+
+// Mode buttons
+document.getElementById('btn-place-stop').addEventListener('click', () => {
+  setMode(state.mode === 'place-stop' ? 'none' : 'place-stop');
+});
+
+document.getElementById('btn-new-line').addEventListener('click', createLine);
+
+document.getElementById('btn-connect-mode').addEventListener('click', () => {
+  if (!state.selectedLine) {
+    switchTab('lines');
+    toast('Select a line first, then use Connect mode');
+    return;
+  }
+  setMode(state.mode === 'connect' ? 'none' : 'connect');
+});
+
+document.getElementById('btn-waypoint-mode').addEventListener('click', () => {
+  if (!state.selectedLine) {
+    switchTab('lines');
+    toast('Select a line first, then use Route Curve mode');
+    return;
+  }
+  if (state.selectedLine.stopIds.length < 2) {
+    toast('Line needs connected stops before you can curve a segment', 'warn');
+    return;
+  }
+  setMode(state.mode === 'waypoint' ? 'none' : 'waypoint');
+});
+
+document.getElementById('btn-add-to-line-mode').addEventListener('click', () => {
+  if (!state.selectedLine) {
+    switchTab('lines');
+    toast('Select a line first, then use Add to Line mode');
+    return;
+  }
+  setMode(state.mode === 'add-to-line' ? 'none' : 'add-to-line');
+});
+
+document.getElementById('btn-delete-mode').addEventListener('click', () => {
+  setMode(state.mode === 'delete' ? 'none' : 'delete');
+});
+
+function setMode(mode) {
+  state.mode = mode;
+  state.connectingFrom = null;
+  state.waypointSegment = null;
+  state.addToLineStop = null;
+  const modeBar = document.getElementById('mode-bar');
+
+  const labels = {
+    'place-stop':   'MODE: PLACING STOP — click map to place',
+    'connect':      'MODE: CONNECT — click two stops to link them',
+    'waypoint':     'MODE: ROUTE CURVE — click a line segment, then click map points to curve it. Right-click to finish.',
+    'add-to-line':  'MODE: ADD TO LINE — click an existing stop to insert it into the selected line',
+    'delete':       'MODE: DEMOLISH — click a stop to remove it',
+    'none': '',
+  };
+
+  modeBar.textContent = labels[mode] || '';
+  modeBar.style.display = mode === 'none' ? 'none' : 'block';
+
+  document.getElementById('btn-place-stop').classList.toggle('active', mode === 'place-stop');
+  document.getElementById('btn-connect-mode').classList.toggle('active', mode === 'connect');
+  document.getElementById('btn-waypoint-mode').classList.toggle('active', mode === 'waypoint');
+  document.getElementById('btn-add-to-line-mode').classList.toggle('active', mode === 'add-to-line');
+  document.getElementById('btn-delete-mode').classList.toggle('active', mode === 'delete');
+
+  map.getContainer().style.cursor = mode === 'none' ? 'grab' : 'crosshair';
+
+  // Clean up any in-progress waypoint preview
+  if (mode !== 'waypoint' && state.waypointPreview) {
+    state.waypointPreview.forEach(m => map.removeLayer(m));
+    state.waypointPreview = null;
+    if (state.waypointPreviewLine) { map.removeLayer(state.waypointPreviewLine); state.waypointPreviewLine = null; }
+  }
+}
+
+// Fare slider
+document.getElementById('fare-slider').addEventListener('input', (e) => {
+  const cents = parseInt(e.target.value);
+  state.fare = cents / 100;
+  state.fareMultiplier = calcFareMultiplier(state.fare);
+
+  document.getElementById('fare-display').textContent = `$${state.fare.toFixed(2)}`;
+  document.getElementById('fare-rev-rider').textContent = `$${state.fare.toFixed(2)}`;
+  document.getElementById('fare-rider-mult').textContent = `${state.fareMultiplier.toFixed(2)}×`;
+
+  // Find sweet spot (max revenue = fare × ridership)
+  let bestFare = BASE_FARE, bestRev = 0;
+  for (let f = 0.50; f <= 10; f += 0.25) {
+    const mult = calcFareMultiplier(f);
+    const rev = f * mult;
+    if (rev > bestRev) { bestRev = rev; bestFare = f; }
+  }
+  document.getElementById('fare-sweet').textContent = `$${bestFare.toFixed(2)}`;
+
+  const estRev = Math.round(state.dailyRiders * state.fare);
+  document.getElementById('fare-est-rev').textContent = `$${estRev.toLocaleString()}/day`;
+
+  // Hint text
+  const hints = [
+    [0, 1.25, '⬆ Very low fare. High ridership but low revenue.'],
+    [1.25, 2.0, '↗ Below average. Good ridership, moderate revenue.'],
+    [2.0, 3.0, '✓ Balanced pricing. Ridership unaffected.'],
+    [3.0, 5.0, '↘ Premium pricing. Fewer riders, higher per-rider revenue.'],
+    [5.0, 99, '⬇ High fare. Ridership significantly suppressed.'],
+  ];
+  const hint = hints.find(([lo, hi]) => state.fare >= lo && state.fare < hi);
+  document.getElementById('fare-hint').textContent = hint ? hint[2] : '';
+
+  updateUI();
+});
+
+// Speed controls
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.addEventListener('click', () => setSpeed(parseInt(btn.dataset.speed)));
+});
+
+// Heatmap toggle
+document.getElementById('heatmap-toggle').addEventListener('click', () => {
+  state.heatmapVisible = !state.heatmapVisible;
+  document.getElementById('heatmap-toggle').classList.toggle('active', state.heatmapVisible);
+  renderHeatmap();
+});
+
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
+  if (tab === 'lines') renderLinesTab();
+  if (tab === 'demand') { renderDemandBars(); refreshStopPerformance(); }
+}
+
+// Advisor
+document.getElementById('btn-analyze').addEventListener('click', () => {
+  callAdvisor('Analyze my current network and give me the most important advice to improve ridership and efficiency.');
+});
+
+document.getElementById('btn-ask-advisor').addEventListener('click', () => {
+  const q = document.getElementById('advisor-question').value.trim();
+  if (!q) return;
+  switchTab('advisor');
+  callAdvisor(q);
+});
+
+// Loan button
+document.getElementById('btn-loan').addEventListener('click', () => {
+  if (state.loanTaken) {
+    log('Emergency loan already used — no further loans available.', 'warn');
+    return;
+  }
+  if (state.budget > 50000) {
+    log('Loan declined — budget must be below $50,000 to qualify.', 'warn');
+    return;
+  }
+  state.loanTaken = true;
+  state.budget += 100000;
+  const btn = document.getElementById('btn-loan');
+  btn.disabled = true;
+  btn.style.opacity = '0.4';
+  btn.textContent = '🏦 Emergency Loan — Used';
+  log('💰 Emergency loan approved! +$100,000 added to budget. Spend wisely.', 'good');
+  updateUI();
+});
+
+// ============================================================
+// INIT
+// ============================================================
+updateUI();
+renderDemandBars();
+updateWarningMarkers();
+setTimeout(() => log('Welcome to PLATFORM! You have $100,000 to build your transit network. Good luck!', 'welcome'), 300);
+</script>
+<div id="game-over-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(13,17,23,0.93);display:none;align-items:center;justify-content:center;flex-direction:column;gap:0">
+  <div style="text-align:center;max-width:480px;padding:40px 32px;background:#161b22;border:2px solid #ff4444;border-radius:12px;box-shadow:0 0 60px rgba(255,68,68,0.25)">
+    <div style="font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:4px;color:#ff4444;margin-bottom:12px">// SYSTEM FAILURE</div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:52px;font-weight:900;color:#ff4444;line-height:1;margin-bottom:8px">BANKRUPT</div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;color:#7d8590;margin-bottom:24px">The transit authority ran out of funds.</div>
+    <div id="game-over-stats" style="font-family:'Share Tech Mono',monospace;font-size:12px;color:#e6edf3;line-height:2.2;margin-bottom:28px;text-align:left;background:#0d1117;padding:14px 18px;border-radius:8px;border:1px solid #30363d"></div>
+    <button onclick="restartGame()" style="width:100%;padding:14px;background:#1a56db;color:#fff;border:none;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;letter-spacing:1px;cursor:pointer;margin-bottom:10px;transition:background 0.2s" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#1a56db'">▶ NEW GAME</button>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#57606a">Your next city is waiting.</div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// GAME OVER + RESTART
+// ============================================================
+function triggerGameOver() {
+  state.gameOver = true;
+  clearInterval(state.tickInterval);
+  state.tickInterval = null;
+  state.gameSpeed = 0;
+  stopAnimLoop();
+
+  const days = state.totalDaysElapsed;
+  const years = Math.floor(days / 365);
+  const remDays = days % 365;
+  const statsEl = document.getElementById('game-over-stats');
+  statsEl.innerHTML = `
+    <span style="color:#7d8590">Survived:</span>   ${years > 0 ? years + 'y ' : ''}${remDays}d<br>
+    <span style="color:#7d8590">Peak Riders:</span> ${state.dailyRiders.toLocaleString()}/day<br>
+    <span style="color:#7d8590">Stops Built:</span> ${state.stops.length}<br>
+    <span style="color:#7d8590">Lines Built:</span> ${state.lines.length}<br>
+    <span style="color:#7d8590">Final Budget:</span> <span style="color:#ff4444">$${Math.round(state.budget).toLocaleString()}</span>
+  `;
+
+  const overlay = document.getElementById('game-over-overlay');
+  overlay.style.display = 'flex';
+
+  document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.speed-btn[data-speed="0"]').classList.add('active');
+}
+
+function restartGame() {
+  // Hide overlay
+  document.getElementById('game-over-overlay').style.display = 'none';
+
+  // Remove all map layers
+  removeAllTrains();
+  state.stops.forEach(s => { if (s.marker) map.removeLayer(s.marker); });
+  state.lines.forEach(l => {
+    l.polylines.forEach(p => map.removeLayer(p));
+    if (l.labelMarkers) l.labelMarkers.forEach(m => map.removeLayer(m));
+  });
+  state.warningMarkers.forEach(m => map.removeLayer(m));
+  state.heatmapLayers.forEach(l => map.removeLayer(l));
+  if (state.waypointPreview) state.waypointPreview.forEach(m => map.removeLayer(m));
+  if (state.waypointPreviewLine) map.removeLayer(state.waypointPreviewLine);
+
+  // Reset state
+  Object.assign(state, {
+    budget: 100000,
+    currentDate: new Date(2026, 0, 1),
+    stops: [],
+    lines: [],
+    mode: 'none',
+    selectedLine: null,
+    connectingFrom: null,
+    dailyRiders: 0,
+    totalRiders: 0,
+    heatmapVisible: false,
+    heatmapLayers: [],
+    gameSpeed: 0,
+    tickInterval: null,
+    cityGrowthMultiplier: 1.0,
+    lineColorIdx: 0,
+    stopIdCounter: 0,
+    lineIdCounter: 0,
+    fare: 2.50,
+    fareMultiplier: 1.0,
+    stopsPlaced: 0,
+    stopQuota: INITIAL_STOP_QUOTA,
+    warningMarkers: [],
+    freqUpgradesAvailable: 0,
+    totalDaysElapsed: 0,
+    communityHappiness: 75,
+    daysSinceLastImprovement: 0,
+    taxpayerHappiness: 80,
+    waypointSegment: null,
+    waypointPreview: null,
+    waypointPreviewLine: null,
+    addToLineStop: null,
+    loanTaken: false,
+    gameOver: false,
+  });
+
+  // Reset football dates
+  state.footballGameDates = generateFootballDates();
+
+  // Reset fare slider
+  document.getElementById('fare-slider').value = 250;
+
+  // Reset speed buttons
+  document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.speed-btn[data-speed="0"]').classList.add('active');
+
+  // Reset loan button
+  const loanBtn = document.getElementById('btn-loan');
+  loanBtn.disabled = false;
+  loanBtn.style.opacity = '1';
+  loanBtn.textContent = '🏦 Emergency Loan — $100,000 (once only)';
+
+  // Reset mode bar + map cursor
+  document.getElementById('mode-bar').style.display = 'none';
+  map.getContainer().style.cursor = 'grab';
+
+  // Reset milestones
+  document.querySelectorAll('.milestone').forEach(el => el.classList.remove('done'));
+
+  // Clear dispatch log
+  const dispatch = document.getElementById('msg-dispatch');
+  dispatch.innerHTML = '';
+
+  updateUI();
+  renderDemandBars();
+  updateWarningMarkers();
+  renderLinesTab();
+  log('New game started — good luck!', 'good');
+}
+</script>
+</body>
+</html>
