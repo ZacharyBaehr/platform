@@ -708,6 +708,31 @@
 
   /* SCROLLBAR */
   * { scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+
+  .ms-row {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    color: #57606a;
+    padding: 1px 0;
+    transition: color 0.4s;
+  }
+  .ms-row.done {
+    color: #3fb950;
+    font-weight: 700;
+  }
+  .ms-row.done::first-letter { content: '✅'; }
+
+  /* Tour highlight pulse */
+  .tour-highlight {
+    outline: 3px solid #1a56db !important;
+    outline-offset: 3px;
+    border-radius: 6px;
+    animation: tourPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes tourPulse {
+    0%, 100% { outline-color: #1a56db; }
+    50% { outline-color: #60a5fa; }
+  }
 </style>
 </head>
 <body>
@@ -896,6 +921,15 @@
   <div id="msg-dispatch">
     <div class="msg-entry msg-welcome">Welcome to PLATFORM — Place stops and connect lines to begin.</div>
   </div>
+  <!-- City Growth Milestones Panel -->
+  <div id="msg-milestones" style="flex:0 0 140px;background:#0a0e14;border-right:1px solid #30363d;display:flex;flex-direction:column;padding:6px 10px;gap:2px;overflow:hidden">
+    <div style="font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:2px;color:#1a56db;text-transform:uppercase;border-bottom:1px solid #30363d;padding-bottom:4px;margin-bottom:4px">🏙 City Growth</div>
+    <div class="ms-row" data-threshold="500">⬜ 500 riders/day</div>
+    <div class="ms-row" data-threshold="2000">⬜ 2,000 riders/day</div>
+    <div class="ms-row" data-threshold="5000">⬜ 5,000 riders/day</div>
+    <div class="ms-row" data-threshold="10000">⬜ 10,000 riders/day</div>
+    <div class="ms-row" data-threshold="25000">⬜ 25,000 riders/day</div>
+  </div>
   <div id="msg-meters">
     <!-- Community Happiness -->
     <div class="meter-block">
@@ -1007,8 +1041,10 @@ let state = {
   waypointPreview: null,
   waypointPreviewLine: null,
   addToLineStop: null,
-  loanTaken: false,       // one free $100k emergency loan available
-  gameOver: false,        // true when budget hits -$100k
+  loanTaken: false,
+  gameOver: false,
+  lastConnection: null,
+  undoTimer: null,
 };
 
 // ============================================================
@@ -1188,36 +1224,46 @@ state.footballGameDates = generateFootballDates();
 // ============================================================
 // WARNING MARKERS — underserved high-demand zones
 // ============================================================
-function isZoneServed(zone) {
-  // A zone is "served" if any CONNECTED stop (on at least one line) is within 2× its radius
+function countStopsNearZone(zone) {
+  // Count how many connected stops are within 2.5× radius of zone
   const connectedStops = state.stops.filter(s => s.lineIds.length > 0);
-  return connectedStops.some(stop => {
+  return connectedStops.filter(stop => {
     const dist = Math.sqrt(Math.pow(stop.lat - zone.lat, 2) + Math.pow(stop.lng - zone.lng, 2));
     return dist < zone.radius * 2.5;
-  });
+  }).length;
+}
+
+function isZoneServed(zone) {
+  return countStopsNearZone(zone) > 0;
 }
 
 function updateWarningMarkers() {
   state.warningMarkers.forEach(m => map.removeLayer(m));
   state.warningMarkers = [];
 
-  // Show warnings for hot zones (raw weight > 60) that have no connected stop nearby
+  // Red zones (weight > 60) that are fully unserved → red warning
+  // Red zones with 1+ stops nearby → downgrade to yellow warning
   const hotZones = DEMAND_ZONES.filter(z => z.weight > 60);
   hotZones.forEach(zone => {
-    if (!isZoneServed(zone)) {
-      const icon = L.divIcon({
-        className: '',
-        html: `<div class="warning-marker" title="Underserved: ${zone.name}">
-          <div class="warning-pulse"></div>
-          <div class="warning-icon">⚠</div>
-          <div class="warning-label">${zone.name}</div>
-        </div>`,
-        iconSize: [0, 0],
-        iconAnchor: [0, 0],
-      });
-      const marker = L.marker([zone.lat, zone.lng], { icon, interactive: false }).addTo(map);
-      state.warningMarkers.push(marker);
-    }
+    const nearbyCount = countStopsNearZone(zone);
+    const isServed = nearbyCount > 0;
+    const isWellServed = nearbyCount >= 2;
+    if (isWellServed) return; // fully served, no marker
+
+    const level = isServed ? 'yellow' : 'red';
+    const pulseColor = isServed ? '#f0a500' : '#ff4444';
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="warning-marker warning-${level}" title="${isServed ? 'Partially served' : 'Underserved'}: ${zone.name}">
+        <div class="warning-pulse" style="border-color:${pulseColor}"></div>
+        <div class="warning-icon" style="color:${pulseColor}">${isServed ? '◉' : '⚠'}</div>
+        <div class="warning-label" style="color:${pulseColor}">${zone.name}</div>
+      </div>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    });
+    const marker = L.marker([zone.lat, zone.lng], { icon, interactive: false }).addTo(map);
+    state.warningMarkers.push(marker);
   });
 }
 
@@ -1229,14 +1275,20 @@ function renderHeatmap() {
   state.heatmapLayers = [];
 
   DEMAND_ZONES.forEach(z => {
-    // Use raw weight for color thresholds — not multiplied by growth
     const rawWeight = z.weight;
-    // But show seasonal effect subtly via opacity
     const effectiveW = getEffectiveWeight(z, state.currentDate);
-    const color = rawWeight >= 85 ? '#ff1a1a'
-                : rawWeight >= 70 ? '#ff4444'
-                : rawWeight >= 55 ? '#f0a500'
-                : '#00a884';
+    const nearbyCount = countStopsNearZone(z);
+    // Served zones visually degrade from red → orange → green
+    let color;
+    if (rawWeight >= 70) {
+      color = nearbyCount >= 2 ? '#2ecc71'
+            : nearbyCount === 1 ? '#f0a500'
+            : '#ff4444';
+    } else if (rawWeight >= 55) {
+      color = nearbyCount >= 1 ? '#2ecc71' : '#f0a500';
+    } else {
+      color = '#00a884';
+    }
     const opacity = 0.10 + (effectiveW / 200) * 0.35;
 
     if (state.heatmapVisible) {
@@ -1597,7 +1649,77 @@ function showConfirm(title, body, onConfirm) {
   overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
 }
 
-// Haversine distance in miles between two lat/lng points
+// ============================================================
+// UNDO CONNECTION
+// ============================================================
+function showUndoToast(seconds) {
+  clearTimeout(state.undoTimer);
+  let el = document.getElementById('undo-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'undo-toast';
+    el.style.cssText = 'position:fixed;bottom:165px;left:50%;transform:translateX(-50%);z-index:7777;background:#21262d;border:1px solid #f0a500;border-radius:8px;padding:10px 18px;display:flex;align-items:center;gap:14px;font-family:\'Barlow Condensed\',sans-serif;font-size:16px;font-weight:700;color:#e6edf3;box-shadow:0 4px 20px rgba(0,0,0,0.5);transition:opacity 0.3s';
+    document.body.appendChild(el);
+  }
+  let remaining = seconds;
+  const update = () => {
+    el.innerHTML = `↩ Undo last connection <span style="color:#f0a500">(${remaining}s)</span> <button onclick="undoLastConnection()" style="background:#f0a500;border:none;border-radius:5px;padding:4px 12px;font-family:\'Barlow Condensed\',sans-serif;font-size:15px;font-weight:900;cursor:pointer;color:#000">UNDO</button>`;
+  };
+  update();
+  el.style.display = 'flex';
+  el.style.opacity = '1';
+  const tick = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(tick);
+      el.style.opacity = '0';
+      setTimeout(() => { el.style.display = 'none'; }, 300);
+      state.lastConnection = null;
+    } else {
+      update();
+    }
+  }, 1000);
+  state.undoTimer = tick;
+}
+
+function undoLastConnection() {
+  const c = state.lastConnection;
+  if (!c) return;
+  clearInterval(state.undoTimer);
+  const el = document.getElementById('undo-toast');
+  if (el) { el.style.display = 'none'; }
+
+  const line = c.line;
+  const fromStop = state.stops.find(s => s.id === c.fromId);
+  const toStop   = state.stops.find(s => s.id === c.toId);
+
+  // Remove the polyline
+  if (c.polyline && map.hasLayer(c.polyline)) map.removeLayer(c.polyline);
+  line.polylines = line.polylines.filter(p => p !== c.polyline);
+
+  // Remove stops from line if they were newly added by this connection
+  const segIdx = line.stopIds.indexOf(c.toId);
+  if (segIdx > -1) {
+    line.stopIds.splice(segIdx, 1);
+    if (toStop) { toStop.lineIds = toStop.lineIds.filter(id => id !== line.id); toStop.marker.setIcon(createStopIcon(getStopColor(toStop))); }
+  }
+  // Only remove fromStop from line if it was also new (i.e., line had 0 stops before)
+  if (line.stopIds.length === 0 && fromStop) {
+    const fromIdx = line.stopIds.indexOf(c.fromId);
+    if (fromIdx > -1) line.stopIds.splice(fromIdx, 1);
+    fromStop.lineIds = fromStop.lineIds.filter(id => id !== line.id);
+    fromStop.marker.setIcon(createStopIcon(getStopColor(fromStop)));
+  }
+
+  state.budget += c.costRefund;
+  state.lastConnection = null;
+
+  drawLineLabels(line);
+  spawnTrainForLine(line);
+  updateUI();
+  renderLinesTab();
+  log(`↩ Connection undone — $${c.costRefund.toLocaleString()} refunded`, 'good');
+}
 function distanceMiles(lat1, lng1, lat2, lng2) {
   const R = 3958.8;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1666,10 +1788,15 @@ function connectStops(fromStop, toStop) {
   updateUI();
   renderLinesTab();
   spawnTrainForLine(line);
-  // Record improvement for both endpoints
   recordNetworkImprovement(fromStop.lat, fromStop.lng);
   recordNetworkImprovement(toStop.lat, toStop.lng);
-  toast(`Connected ${fromStop.name} → ${toStop.name} on ${line.name} — $${cost.toLocaleString()} (${miles.toFixed(1)}mi)`);
+  log(`Connected ${fromStop.name} → ${toStop.name} on ${line.name} — $${cost.toLocaleString()} (${miles.toFixed(1)}mi)`, 'info');
+
+  // Save undo snapshot — 10 second window
+  state.lastConnection = { line, fromId: fromStop.id, toId: toStop.id, polyline: pl, costRefund: cost,
+    fromWasNew: !line.stopIds.slice(0, -2).includes(fromStop.id),
+    toWasNew: !line.stopIds.slice(0, -1).includes(toStop.id) };
+  showUndoToast(10);
 }
 
 function drawLineLabels(line) {
@@ -2058,8 +2185,20 @@ function gameTick() {
   const prevFreqTokens = Math.floor((t - 2) / FREQ_UNLOCK_DAYS);
   if (newFreqTokens > prevFreqTokens) {
     state.freqUpgradesAvailable++;
-    toast(`🚆 Frequency upgrade available! (${state.freqUpgradesAvailable} pending)`, 'info');
+    log(`🚆 Frequency upgrade available! (${state.freqUpgradesAvailable} pending)`, 'info');
     if (document.querySelector('.tab-btn[data-tab="lines"]').classList.contains('active')) renderLinesTab();
+    // First-time frequency tutorial popup
+    if (newFreqTokens === 1) {
+      setSpeed(0);
+      showTutorialPopup(
+        '🚆 Frequency Upgrade Available!',
+        `You've earned your first train frequency upgrade after 60 days of operation.<br><br>
+        <strong>More trains = more riders.</strong><br><br>
+        Go to the <strong>Lines tab</strong>, click a line, and hit <strong>"Upgrade Frequency"</strong> to run more trains per hour on that line.<br><br>
+        The game has been paused — resume when you're ready.`,
+        'Got it — resume game'
+      );
+    }
   }
 
   // Football game day notification
@@ -2098,6 +2237,21 @@ function gameTick() {
     toast('💸 Taxpayers angry — hoarding $1M+ in transit funds!', 'danger');
   else if (state.budget >= 500000 && state.totalDaysElapsed % 60 === 0)
     toast('💰 Taxpayers unhappy — invest that surplus in the network!', 'warn');
+
+  // Congestion suggestion — if any zone has 3+ lines passing through but fewer than 3 stops, suggest more stops
+  if (t % 30 === 0 && state.lines.length >= 2) {
+    DEMAND_ZONES.filter(z => z.weight > 60).forEach(zone => {
+      const stopsNear = state.stops.filter(s => {
+        const dist = Math.sqrt((s.lat - zone.lat)**2 + (s.lng - zone.lng)**2);
+        return dist < zone.radius * 2.5;
+      });
+      const linesNear = new Set();
+      stopsNear.forEach(s => s.lineIds.forEach(id => linesNear.add(id)));
+      if (linesNear.size >= 2 && stopsNear.length < 3) {
+        log(`🔀 ${zone.name} area is getting busy with ${linesNear.size} lines — consider adding more stops there to handle the load`, 'warn');
+      }
+    });
+  }
 
   // City growth
   if (state.totalRiders > 0) {
@@ -2140,12 +2294,19 @@ function setSpeed(speed) {
 // MILESTONES
 // ============================================================
 function checkMilestones() {
-  document.querySelectorAll('.milestone').forEach(el => {
+  // Update bottom bar milestone rows
+  document.querySelectorAll('.ms-row').forEach(el => {
     const threshold = parseInt(el.dataset.threshold);
     if (state.dailyRiders >= threshold && !el.classList.contains('done')) {
       el.classList.add('done');
-      toast(`🎉 Milestone: ${threshold.toLocaleString()} daily riders!`, 'good');
+      el.textContent = `✅ ${threshold.toLocaleString()} riders/day`;
+      log(`🎉 Milestone: ${threshold.toLocaleString()} daily riders!`, 'good');
     }
+  });
+  // Also update any legacy .milestone elements in the panel
+  document.querySelectorAll('.milestone').forEach(el => {
+    const threshold = parseInt(el.dataset.threshold);
+    if (state.dailyRiders >= threshold) el.classList.add('done');
   });
 }
 
@@ -2636,12 +2797,133 @@ document.getElementById('btn-loan').addEventListener('click', () => {
 });
 
 // ============================================================
+// TUTORIAL POPUP (reusable)
+// ============================================================
+function showTutorialPopup(title, html, btnLabel, onClose) {
+  let ov = document.getElementById('tutorial-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'tutorial-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(13,17,23,0.88);display:flex;align-items:center;justify-content:center';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `
+    <div style="background:#161b22;border:1px solid #1a56db;border-radius:12px;padding:32px 30px 24px;max-width:420px;width:92%;box-shadow:0 8px 50px rgba(26,86,219,0.25)">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:900;color:#e6edf3;margin-bottom:14px">${title}</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;color:#7d8590;line-height:1.7;margin-bottom:24px">${html}</div>
+      <button id="tutorial-btn" style="width:100%;padding:13px;background:#1a56db;color:#fff;border:none;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;cursor:pointer">${btnLabel || 'Got it!'}</button>
+    </div>`;
+  ov.style.display = 'flex';
+  document.getElementById('tutorial-btn').onclick = () => {
+    ov.style.display = 'none';
+    if (onClose) onClose();
+  };
+}
+
+// ============================================================
+// 6-STEP ONBOARDING TOUR
+// ============================================================
+const TOUR_STEPS = [
+  {
+    title: '👋 Welcome to PLATFORM',
+    html: `You're the transit director for Lincoln, Nebraska. Build subway lines, serve the city, and keep the budget healthy.<br><br>
+    Let's take a quick tour so you know what you're looking at.`,
+    btn: 'Show me around →',
+    highlight: null,
+  },
+  {
+    title: '💰 Your Dashboard',
+    html: `The <strong>top bar</strong> shows your key stats at all times:<br><br>
+    • <strong>Budget</strong> — your cash. Don't let it hit −$100,000 or it's game over.<br>
+    • <strong>Daily Riders</strong> — how many people use your network each day.<br>
+    • <strong>Revenue/Day</strong> — income from fares.<br>
+    • <strong>Op. Cost/Day</strong> — what it costs to run everything.<br>
+    • <strong>Net/Day</strong> — profit or loss each day.`,
+    btn: 'Next →',
+    highlight: '#header',
+  },
+  {
+    title: '⏸ Time Controls',
+    html: `The <strong>speed buttons</strong> in the top right control time:<br><br>
+    • <strong>⏸ Pause</strong> — stop time to plan your network.<br>
+    • <strong>1×</strong> — normal speed.<br>
+    • <strong>3× / 10×</strong> — fast-forward to grow your budget faster.<br><br>
+    <em>Tip: always pause before making big decisions.</em>`,
+    btn: 'Next →',
+    highlight: '#speed-controls',
+  },
+  {
+    title: '⬤ Placing Stops',
+    html: `Stops are where riders board and exit your trains.<br><br>
+    1. Click <strong>"⬤ Place Stop"</strong> in the Build tab.<br>
+    2. Click anywhere on the <strong>map</strong> to drop a stop.<br>
+    3. Each stop costs <strong>$8,000</strong>.<br><br>
+    <em>Start near the red demand zones on the map — those are your busiest areas.</em>`,
+    btn: 'Next →',
+    highlight: '#btn-place-stop',
+  },
+  {
+    title: '⟶ Connecting Stops',
+    html: `Stops alone don't generate riders — you need to <strong>connect them into a line</strong>.<br><br>
+    1. Go to the <strong>Lines tab</strong> and create a line first.<br>
+    2. Click <strong>"⟶ Connect Stops"</strong>.<br>
+    3. Click one stop, then another to link them.<br><br>
+    Longer connections cost more. Aim to connect stops that cover different demand zones.`,
+    btn: 'Next →',
+    highlight: '#btn-connect-mode',
+  },
+  {
+    title: '🎟 Fare Pricing',
+    html: `You control how much riders pay.<br><br>
+    • Lower fares → <strong>more riders</strong>, less revenue per person.<br>
+    • Higher fares → <strong>fewer riders</strong>, more revenue per person.<br><br>
+    Use the <strong>Fare Pricing</strong> slider in the Build tab to find your sweet spot. Watch the ridership multiplier update in real time.`,
+    btn: "Let's build! ▶",
+    highlight: null,
+  },
+];
+
+let tourStep = 0;
+function startTour() {
+  tourStep = 0;
+  showTourStep();
+}
+
+function showTourStep() {
+  const step = TOUR_STEPS[tourStep];
+  if (!step) return;
+
+  // Highlight element if specified
+  document.querySelectorAll('.tour-highlight').forEach(el => el.classList.remove('tour-highlight'));
+  if (step.highlight) {
+    const el = document.querySelector(step.highlight);
+    if (el) el.classList.add('tour-highlight');
+  }
+
+  showTutorialPopup(
+    `<span style="font-size:13px;color:#1a56db;font-family:'Share Tech Mono',monospace;letter-spacing:2px">STEP ${tourStep + 1} OF ${TOUR_STEPS.length}</span><br>${step.title}`,
+    step.html,
+    step.btn,
+    () => {
+      document.querySelectorAll('.tour-highlight').forEach(el => el.classList.remove('tour-highlight'));
+      tourStep++;
+      if (tourStep < TOUR_STEPS.length) {
+        showTourStep();
+      }
+    }
+  );
+}
+
+// ============================================================
 // INIT
 // ============================================================
 updateUI();
 renderDemandBars();
 updateWarningMarkers();
-setTimeout(() => log('Welcome to PLATFORM! You have $100,000 to build your transit network. Good luck!', 'welcome'), 300);
+setTimeout(() => {
+  log('Welcome to PLATFORM! You have $100,000 to build your transit network. Good luck!', 'welcome');
+  startTour();
+}, 400);
 </script>
 <div id="game-over-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(13,17,23,0.93);display:none;align-items:center;justify-content:center;flex-direction:column;gap:0">
   <div style="text-align:center;max-width:480px;padding:40px 32px;background:#161b22;border:2px solid #ff4444;border-radius:12px;box-shadow:0 0 60px rgba(255,68,68,0.25)">
@@ -2759,6 +3041,11 @@ function restartGame() {
 
   // Reset milestones
   document.querySelectorAll('.milestone').forEach(el => el.classList.remove('done'));
+  document.querySelectorAll('.ms-row').forEach(el => {
+    el.classList.remove('done');
+    const t = parseInt(el.dataset.threshold);
+    el.textContent = `⬜ ${t.toLocaleString()} riders/day`;
+  });
 
   // Clear dispatch log
   const dispatch = document.getElementById('msg-dispatch');
@@ -2769,6 +3056,7 @@ function restartGame() {
   updateWarningMarkers();
   renderLinesTab();
   log('New game started — good luck!', 'good');
+  setTimeout(startTour, 300);
 }
 </script>
 </body>
